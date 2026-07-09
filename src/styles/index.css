@@ -1,0 +1,120 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------
+   AnimeCLZ design tokens — Sprint 3.5 redesign
+   Tailwind v4 reads custom design tokens directly from CSS,
+   so this file IS the Tailwind config. Anything declared
+   inside @theme becomes a utility: bg-background, text-primary,
+   font-display, etc. Values must match DESIGN.md / CLAUDE.md.
+--------------------------------------------------------- */
+@theme {
+  /* Surfaces */
+  --color-background: #050505;
+  --color-surface: #101010;
+  --color-surface-hover: #181818;
+  --color-border: #2b2b2b;
+
+  /* Brand — soft blue duo, no red/yellow/orange/purple */
+  --color-primary: #6ea8fe;
+  --color-secondary: #87c4ff;
+
+  /* Text */
+  --color-text: #f5f5f5;
+  --color-text-secondary: #a5a5a5;
+
+  /* Feedback — semantic only, never decorative/brand use */
+  --color-error: #f87171;
+
+  /* Type system */
+  --font-display: "Space Grotesk", sans-serif;
+  --font-body: "Inter", sans-serif;
+
+  /* Every bare `transition-*` utility (no explicit duration-* class) uses
+     this by default. AnimeCLZ's microanimaciones live in the 180-300ms
+     band; Tailwind's own default (150ms) was slightly under that, so this
+     one line keeps every un-annotated transition in range app-wide instead
+     of adding duration-200 to dozens of elements individually. */
+  --default-transition-duration: 220ms;
+}
+
+html,
+body {
+  background-color: var(--color-background);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  scroll-behavior: smooth;
+}
+
+/* Visible keyboard focus everywhere — accessibility floor */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* Very soft brand gradient — buttons/accents only, never a full background */
+.brand-gradient-bg {
+  background-image: linear-gradient(135deg, var(--color-primary), var(--color-secondary));
+}
+
+/* Horizontal shelves (MovieRow) scroll without a visible scrollbar */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Thin, on-brand scrollbar for dropdown panels (Select) and other small
+   scrollable areas where a scrollbar should stay visible but discreet. */
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border) transparent;
+}
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background-color: var(--color-border);
+  border-radius: 999px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-primary);
+}
+
+/* Shimmer skeleton — a soft light sweep across the block, the same
+   language used by Netflix/YouTube loading placeholders. */
+@keyframes shimmer-sweep {
+  0% {
+    background-position: 150% 0;
+  }
+  100% {
+    background-position: -50% 0;
+  }
+}
+.animate-shimmer {
+  background-color: var(--color-surface-hover);
+  background-image: linear-gradient(
+    100deg,
+    transparent 30%,
+    rgba(110, 168, 254, 0.12) 50%,
+    transparent 70%
+  );
+  background-size: 200% 100%;
+  animation: shimmer-sweep 1.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
