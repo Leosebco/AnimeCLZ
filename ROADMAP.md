@@ -163,21 +163,275 @@ errores de la app (solo 429/504 intermitentes de Jikan, ya mitigados).
 
 ---
 
-## Sprint 4 — Firebase y cuentas de usuario
+## v0.8 — Renovación mayor UI/UX (completado, con exclusiones documentadas)
 
-- **Firebase** — alta del proyecto e integración (Auth y base de datos para lo que no cubre Jikan:
-  usuarios, favoritos, historial).
-- **Login**
-- **Registro**
-- **Perfil** — datos de la cuenta del usuario.
-- **Configuración** — preferencias de cuenta/app.
+**Identidad visual — segunda paleta.** Fondo/superficie más profundos (azul-noche en vez de casi-negro
+puro), `Card`/`Hover` separados como tokens distintos (antes uno solo cubría ambos roles), bordes ahora
+blanco-translúcido (`rgba(255,255,255,.08)`) en vez de un gris sólido, `Primary Hover` reintroducido como
+token explícito. `Secondary` (`#7C5CFF`) es azul-violeta — única excepción documentada a "no morado",
+reservada a acentos puntuales (nunca el botón `primary`, ver CLAUDE.md/DESIGN.md).
 
-**Nota:** esto formaliza (con Firebase) la capa de persistencia que Favoritos/Mi Lista/Historial ya
-dejaron preparada en el Sprint 3 — es un sprint de arquitectura que se analiza y se aprueba antes de
-implementar.
+**Hero → carrusel real.** `getFeaturedSlides` trae 6 animes reales del top actual (antes 1 solo). Nuevo
+`Hero`: autoplay cada 8s (se pausa en hover, se detiene con `prefers-reduced-motion`), swipe/drag en
+cualquier dispositivo, indicadores de punto, tira de miniaturas (6), fade+slide al cambiar de slide.
+Botones "Ver Ahora"/"Mi Lista" (ver nota sobre "Favorito" abajo).
 
-**Criterio de aceptación:** un usuario puede registrarse, iniciar sesión, ver/editar su perfil y
-configuración, y sus favoritos/historial quedan asociados a su cuenta real en Firebase.
+**Calidad de imagen.** El problema real: Jikan no da un banner panorámico, solo pósters verticales, y
+mostrarlos a ancho completo los recortaba brutalmente. Arreglado con un patrón de dos capas (fondo
+ambiental = mismo póster desenfocado y escalado; primer plano = póster nítido en su relación de aspecto
+real, nunca estirado) en Hero y en el banner de `AnimeDetail`. `animeService.js` ahora expone
+`poster`/`posterSmall` y los componentes arman un `srcset` simple (`1x`/`2x`).
+
+**Buscador — tercera revisión + autocomplete nuevo.** La causa raíz (endpoint de búsqueda de Jikan
+frágil) es la misma de Sprint 3.5/3.6 — no hay una cuarta causa nueva que corregir, y no se puede
+prometer 100% de disponibilidad de un servicio externo que no controlamos. Lo que sí es nuevo: caché de
+resultados de búsqueda (3 min) para no repetir la misma llamada frágil, y un buscador de resultados
+instantáneos en el Navbar (`NavbarSearch.jsx`, `quickSearchAnime`) — barra que se expande, resultados en
+vivo con debounce, "Ver todos los resultados" hacia `/buscar`.
+
+**Filtros — chips + Select.** Género/Formato/Estado/Puntuación ahora son `ChipGroup` (un vistazo, un
+clic); Orden/Año siguen en `Select` (demasiadas opciones para chips). Se sumaron los filtros de Estado
+(`status` de Jikan) y Puntuación mínima (`min_score`) que no existían antes.
+
+**Cards.** Se reintrodujo "Formato" (tipo) en el pie de la card junto a año/estado/géneros (se había
+quitado en el Sprint 3.5). El hover de tres íconos (Ver/Mi Lista/Información) del Sprint 3.6 se mantiene
+sin cambios.
+
+**Ficha de Detalle — Episodios real.** Se reconsideró la decisión del Sprint 3 de no construir Episodios:
+Jikan sí expone metadatos reales por episodio (número, título, fecha, puntuación) aunque no aloja video,
+y esa información por sí sola es real y útil (MAL/AniList la muestran igual). Nueva sección entre Trailer
+y Relacionados. "Temporadas" no es una sección nueva — ya está cubierta por Relacionados (secuelas) e
+Información (temporada/año).
+
+**Microanimaciones y rendimiento.** Scroll con rueda del mouse redirigido a horizontal en los carruseles
+(`MovieRow`) — antes solo funcionaba con touch/arrastre. `EmptyState` ahora acepta `onRetry` (varios
+endpoints de Jikan, no solo el de búsqueda, sirven una respuesta 200 vacía bajo carga en vez de un error
+limpio — un botón de reintento ahí es barato y a veces evita un "no hay nada" falso). `memo` en
+`CharacterCard` (ya estaba en `AnimeCard`).
+
+**Preparación de arquitectura (sin implementar):**
+- *Supabase:* `animeService.js` ya expone funciones por nombre de recurso en vez de que las páginas
+  llamen a Jikan directamente — ese es el punto de corte para que, cuando exista Supabase, esas
+  funciones lean de ahí primero y usen Jikan solo como importador de respaldo, sin tocar páginas/hooks.
+  No se instaló ningún cliente de Supabase ni se creó configuración — no hay proyecto real todavía.
+- *Panel de Administrador:* no implementado (pedido explícito). Cuando se aborde, va en rutas propias
+  (`/admin/*`) protegidas por auth, separado de las páginas públicas.
+
+**Exclusiones documentadas (no fabricadas):**
+- **Continuar viendo** y **Nuevos episodios** — necesitan historial real por usuario, que no existe sin
+  auth/base de datos (Sprint 4). Se muestran cuando haya datos reales, no antes.
+- **Noticias** — Jikan no tiene un feed de noticias; no hay una fuente real que mostrar todavía.
+- Estas tres NO aparecen en Home con contenido inventado — omitirlas es la aplicación directa de "nunca
+  inventar datos" (CLAUDE.md), no un olvido.
+- **"Favorito" como botón separado de "Mi Lista":** pedido dos veces (Sprint 3 y v0.8) con íconos
+  distintos (♥ vs. +). Se mantiene consolidado en un solo `FavoritesContext` — un segundo sistema de
+  "me gusta" sin persistencia ni propósito distinto habría sido complejidad sin beneficio real. Si el
+  producto necesita de verdad dos listas distintas (p. ej. "me gusta" vs. "ver después"), es una
+  decisión de datos para cuando exista Supabase/Firebase, no una maqueta visual ahora.
+
+**Criterio de aceptación:** `npm run build` y `npm run lint` limpios; todas las rutas, el buscador (con
+autocomplete), los filtros, las cards y las animaciones verificados en navegador; responsive revisado en
+desktop/tablet/móvil; cero rojo/amarillo/naranja en la UI.
+
+---
+
+## v0.9 — Módulo completo de autenticación + Supabase (completado, con exclusiones documentadas)
+
+Cumple, con Supabase en vez de Firebase, lo que el Sprint 4 planeaba (ver nota más abajo) — Jikan sigue
+siendo la única fuente de datos de anime; Supabase solo cubre lo que Jikan nunca pudo: cuentas, listas
+persistentes, historial.
+
+**Supabase.** `@supabase/supabase-js` instalado; `src/lib/supabase.js` crea el cliente desde
+`VITE_SUPABASE_URL`/`VITE_SUPABASE_PUBLISHABLE_KEY` (`.env.example` agregado). Solo la Publishable/anon
+key se usa en el frontend — nunca la Secret Key. Si las variables no están definidas, el cliente es
+`null` y el resto de la app (catálogo, búsqueda, detalle) sigue funcionando igual que antes.
+
+**Autenticación.** Login con correo/contraseña y con Google, registro (con confirmación por correo),
+recuperar/restablecer contraseña, cerrar sesión — todo en `services/authService.js`, con mensajes de
+error traducidos a español (mismo criterio que los errores de Jikan: nunca texto técnico crudo).
+`context/AuthContext.jsx` + `hooks/useAuth.js` exponen la sesión globalmente; persistencia y refresh de
+token los maneja el propio cliente de Supabase (`persistSession`/`autoRefreshToken`).
+
+**Rutas protegidas.** `layout/ProtectedRoute.jsx` protege `/mi-lista`, `/favoritos`, `/historial` y
+`/perfil` — sin sesión, redirige a `/iniciar-sesion` y vuelve a la página original tras el login.
+
+**Navbar.** Sin sesión: "Iniciar sesión"/"Crear cuenta". Con sesión: avatar con iniciales y un menú
+desplegable (Headless UI `Menu`, mismo patrón visual que `Select.jsx`) con Perfil/Mi Lista/Favoritos/
+Cerrar sesión.
+
+**Favoritos y Mi Lista, ahora sí separados.** La nota del v0.8 sobre esto ya anticipaba el criterio: "si
+el producto necesita de verdad dos listas distintas... es una decisión de datos para cuando exista
+Supabase". Con Supabase real, se separaron: `favorites` (♥, "me gusta") y `watch_later` ("Mi Lista",
+"quiero verlo después") son tablas y contextos distintos (`FavoritesContext`/`useFavorites()` y
+`WatchLaterContext`/`useWatchLater()`, compartiendo lógica vía `hooks/useUserCollection.js`). La card
+compacta (`AnimeCard`) conserva sus tres íconos de hover de siempre, solo que el corazón ahora es
+Favoritos; Hero y AnimeDetail muestran ambos botones (♥ Favorito / 🔖 Mi Lista) por separado. Toda acción
+de guardar exige sesión — sin ella, redirige a `/iniciar-sesion` en vez de fallar en silencio.
+
+**Perfil real.** Deja de ser un placeholder: muestra avatar (iniciales), permite editar
+username/bio (`profiles`, con trigger que crea la fila automáticamente al registrarse) y cerrar sesión.
+
+**Base de datos y RLS.** Migraciones organizadas en `supabase/migrations/000N_*.sql` (no ejecutadas contra
+ningún proyecto real — ver `supabase/migrations/README.md` para aplicarlas): `profiles`, `favorites`,
+`watch_later`, `watch_history`, `ratings`, `comments`, `notifications`. Todas con Row Level Security:
+cada usuario solo accede a sus propias filas.
+
+**Preparado sin interfaz (a propósito):**
+- `watch_history`/"Continuar viendo" — tabla y `services/historyService.js` listos, y ya existe la
+  página `/historial`, pero nada la escribe todavía: no hay reproductor real (fase "Streaming").
+- `ratings` y `comments` — tablas con RLS listas; sin interfaz. Se construyen cuando se pida
+  explícitamente.
+- `notifications` — tabla lista, sin política de `insert` para el rol `authenticated` a propósito (se
+  crearían desde el backend/service role, no desde el cliente); sin interfaz.
+
+**No implementado (pedido explícito):**
+- Panel de Administrador — su arquitectura llegó después, en v0.10 (ver abajo).
+- CRUD de animes, subida de episodios — no implementado.
+
+**Criterio de aceptación:** `npm run build` y `npm run lint` limpios; registro, login (correo y Google),
+recuperar/restablecer contraseña, cerrar sesión, rutas protegidas, Favoritos y Mi Lista como listas
+independientes, y Perfil editable, todo verificado sin romper ninguna pantalla existente.
+
+---
+
+## v0.10 — Panel de Administración: arquitectura (completado, sin CRUD a propósito)
+
+Arquitectura, navegación, layout y diseño visual del Panel de Administración — el CRUD real (crear/
+editar/eliminar contenido) queda para otra pasada, pedido explícitamente así.
+
+**Roles.** Columna `role` en `profiles` (migración 0008): `admin`/`editor`/`moderador`/`usuario`, por
+defecto `usuario`. Protegida con un trigger (`protect_profile_role`) que impide que un usuario cambie su
+propio rol a menos que ya sea `admin` — necesario porque `profileService.updateProfile` hace un UPDATE
+normal sin filtrar columnas, y la policy de RLS ya permitía editar la propia fila.
+
+**Rutas protegidas por rol.** `ProtectedRoute` ahora acepta un prop `roles`: con sesión pero sin el rol
+requerido, redirige a Inicio (no a Login, ya que sí inició sesión). `/admin/*` completo está detrás de
+`roles={STAFF_ROLES}` (admin/editor/moderador). Se corrigió una condición de carrera real durante el
+desarrollo: el estado de "perfil cargando" se derivaba con un booleano aparte que podía quedar en `false`
+un instante después del login (antes de que el efecto de traer el perfil arrancara), lo que habría
+rebotado a un admin legítimo a Inicio en la primera carga. Se resolvió derivando ese estado por
+comparación (`profileFetchedFor !== userId`) en vez de un segundo `useState`.
+
+**Layout separado.** `layout/admin/AdminLayout.jsx` + `AdminSidebar` + `AdminHeader` — sin Navbar/Footer
+públicos. Sidebar fija en desktop, drawer deslizante con overlay en mobile (mismo patrón de animación que
+el menú mobile del Navbar público). El sidebar filtra sus ítems por rol: Usuarios y Configuración solo
+para `admin`.
+
+**Acceso.** Cuentas con rol de staff ven "Panel de Administración" en el menú de cuenta (`AccountMenu`,
+el mismo componente que ya usaba el Navbar público) — no hay otra forma de llegar a `/admin` desde la UI
+pública, a propósito.
+
+**Componentes reutilizables (`components/admin/`):** `StatCard`, `DataTable` (tabla base con
+loading/error/empty, sin lógica de datos propia), `TableToolbar` (búsqueda + slot de filtros),
+`AdminPageHeader`. Pensados para que el futuro CRUD los reutilice en vez de reimplementar tablas por
+sección.
+
+**Las 10 vistas:**
+- *Dashboard* — 4 métricas reales (usuarios, equipo, comentarios, calificaciones — conteos de Supabase,
+  no inventados; muestran "—" si Supabase no está configurado) + tabla de usuarios recientes.
+- *Animes* — catálogo de Jikan en modo lectura, mismo servicio que Explorar (búsqueda + filtro de
+  formato/estado + paginación, todo real).
+- *Temporadas* — anime de la temporada actual (Jikan `/seasons/now`); búsqueda y filtro de formato son
+  del lado del cliente porque ese endpoint no soporta `q`.
+- *Usuarios* — tabla `profiles` real (búsqueda por nombre, filtro por rol, paginación real). Sin edición
+  de rol desde aquí todavía (eso es CRUD).
+- *Comentarios* — tabla `comments` real (estará vacía en la práctica: nada la escribe todavía).
+- *Episodios, Personajes, Estudios, Noticias* — sin fuente de datos real: Jikan solo da episodios/
+  personajes por anime, no como listado global; Estudios (Jikan sí tiene `/producers`, no integrado
+  todavía) y Noticias (no hay fuente) necesitan trabajo propio. Se dejaron con la tabla y columnas ya
+  definidas y un `EmptyState` que explica por qué, en vez de datos de relleno.
+- *Configuración* — sin controles interactivos a propósito: no hay tabla de configuración en Supabase
+  todavía, y un toggle que no persiste nada sería peor que no tenerlo. Documenta los grupos previstos
+  (General, Apariencia, Notificaciones, Roles y permisos).
+
+**No implementado (pedido explícito):**
+- CRUD completo de cualquier sección (crear/editar/eliminar Animes, Episodios, Personajes, Estudios,
+  Noticias; editar rol o eliminar un Usuario; moderar Comentarios).
+- Integración de Estudios con `/producers` de Jikan.
+- Tabla de Noticias y su CRUD.
+- Tabla de Configuración y su CRUD.
+
+**Criterio de aceptación:** `npm run build` y `npm run lint` limpios; las 10 vistas navegables desde el
+sidebar (filtrado por rol); un usuario sin rol de staff no puede entrar a `/admin/*` (redirige a Inicio);
+Animes/Temporadas/Usuarios/Comentarios muestran datos reales con búsqueda/filtro/paginación funcionando;
+ninguna pantalla existente se rompió.
+
+---
+
+## v1.1 — Sistema de perfiles + página institucional (completado, con exclusiones documentadas)
+
+**Perfiles múltiples estilo Netflix.** Una cuenta puede tener varios perfiles (`profiles_account`,
+migración 0009) — no varias cuentas. Cada perfil: nombre, avatar (inicial+color / imagen propia /
+personaje de Jikan), color y rol propio. Pantalla "¿Quién está viendo AnimeCLZ?" (`/perfiles`) tras el
+login/registro; "Cambiar Perfil" queda disponible en todo momento desde el menú de cuenta. El primer
+perfil de cada cuenta se autogenera al registrarse y es el único que no se puede eliminar.
+
+**El rol que importa se movió al perfil.** Hasta v0.10, `ProtectedRoute roles={STAFF_ROLES}` leía
+`profiles.role` (rol de la CUENTA). Ahora lee `profiles_account.rol` (rol del PERFIL activo) — así,
+dentro de una misma cuenta administradora, un perfil "Invitado" o "Niños" no hereda acceso al Panel de
+Administración solo por compartir cuenta con "Leonardo (Administrador)". Se agregó un trigger
+(`sync_default_profile_rol`) para que, al elevar una cuenta a admin desde el SQL Editor (el único camino
+que existe para la primera cuenta admin, ver v0.10), el perfil por defecto de esa cuenta quede
+sincronizado automáticamente — sin ese trigger, el Panel de Administración nunca habría aparecido para
+nadie tras ese único paso manual documentado en v0.10.
+
+**Bug real encontrado y corregido durante el desarrollo.** El estado "perfiles cargando" se calculó al
+principio con un booleano de estado aparte (mismo patrón que se usó — y ya había dado un problema real —
+en `AuthContext` durante v0.10). Se corrigió antes de integrarlo, derivándolo por comparación
+(`profilesFetchedFor !== accountId`) en vez de un segundo `useState`, replicando la solución que ya
+existía para el mismo tipo de condición de carrera en `AuthContext`.
+
+**Avatares.** Tres modos en `AvatarPicker.jsx`: inicial + color (por defecto), imagen propia (Supabase
+Storage, bucket `avatars`, migración 0010, con política de que cada cuenta solo escribe en su propia
+carpeta) y personaje de Jikan (`/characters`, búsqueda global). El grid de personajes solo muestra
+imagen + nombre — ese endpoint no trae el anime en la respuesta de lista (a diferencia de
+`/anime/{id}/characters`, que sí); el anime se resuelve con una sola llamada extra recién al confirmar
+la elección, no para los 12 resultados del grid.
+
+**Menú de cuenta rediseñado.** El botón ya no es un simple círculo: muestra avatar + nombre + rol del
+perfil activo. El menú desplegable creció a Mi Perfil / Cambiar Perfil / Mi Lista / Favoritos /
+Historial / Configuración / Panel de Administración (solo staff) / Cerrar sesión.
+
+**Página institucional real (`/acerca`).** Diez secciones con contenido redactado específicamente para
+AnimeCLZ (no texto de relleno genérico): qué es, misión, objetivos, tecnologías, arquitectura, el
+desarrollador, preguntas frecuentes, contacto, privacidad y términos. El Footer, que desde el inicio del
+proyecto apuntaba a rutas de relleno en inglés que nunca existieron (`/about`, `/careers`, `/terms`...),
+ahora enlaza a anclas reales dentro de esta página.
+
+**Deliberadamente NO fragmentado por perfil (pedido explícito: no romper Favoritos/Mi Lista/
+Historial):** las tres siguen siendo por CUENTA, no por perfil — cada perfil de una misma cuenta ve la
+misma Mi Lista/Favoritos/Historial. Fragmentarlas habría exigido una migración de esquema (agregar
+`profile_id` a `favorites`/`watch_later`/`watch_history`, reescribir sus RLS, sus servicios y sus
+contextos) muy por fuera de "sistema de perfiles + página institucional"; queda anotado como decisión de
+alcance, no como omisión accidental.
+
+**No implementado (pedido explícito):**
+- CRUD del Panel de Administración — sin cambios respecto a v0.10.
+- Configuración (`/configuracion`, la de usuario): misma arquitectura de "estructura lista, sin lógica"
+  que ya se usó en `/admin/configuracion` en v0.10 — sin controles interactivos reales todavía.
+- Favoritos/Mi Lista/Historial por perfil (ver el punto de arriba).
+
+**Criterio de aceptación:** `npm run build` y `npm run lint` limpios; registro/login llevan al selector de
+perfiles antes que a Inicio; crear, editar (nombre/color/avatar) y eliminar un perfil (salvo el
+predeterminado) funcionan; el rol del perfil activo —no el de la cuenta— controla el acceso a
+`/admin/*`; `/acerca` navegable con anclas funcionando desde el Footer; ninguna pantalla, ni la
+autenticación, ni el Panel de Administración existentes se rompieron.
+
+---
+
+## Sprint 4 — Firebase y cuentas de usuario (superado por v0.9 — se hizo con Supabase)
+
+- ~~**Firebase**~~ — se implementó con **Supabase** en su lugar (ver v0.9 arriba); mismo objetivo (auth +
+  base de datos para lo que no cubre Jikan), proveedor distinto.
+- ~~**Login**~~ ✅ v0.9
+- ~~**Registro**~~ ✅ v0.9
+- ~~**Perfil**~~ ✅ v0.9
+- **Configuración** — preferencias de cuenta/app; no cubierto por v0.9, sigue pendiente.
+
+**Nota:** esto formalizó la capa de persistencia que Favoritos/Mi Lista/Historial ya dejaron preparada
+desde el Sprint 3, pero con Supabase (no Firebase) — ver v0.9 para el detalle completo.
+
+**Criterio de aceptación:** cumplido por v0.9, salvo "Configuración" (pendiente).
 
 ---
 
@@ -196,13 +450,14 @@ configuración, y sus favoritos/historial quedan asociados a su cuenta real en F
 
 ## Sprint 6 — Administración y monetización
 
-- **Panel Administrador** — gestión de contenido/usuarios fuera de la app pública.
-- **Dashboard** — vistas resumen para el administrador.
-- **Analytics** — métricas de uso de la plataforma.
+- ~~**Panel Administrador**~~ — arquitectura, navegación y layout ✅ v0.10; **CRUD real pendiente**.
+- ~~**Dashboard**~~ — vista resumen con métricas reales ✅ v0.10.
+- **Analytics** — métricas de uso de la plataforma (distinto de las métricas de contenido del Dashboard).
 - **Sistema Premium** — planes/suscripciones, contenido o funciones exclusivas.
 
-**Criterio de aceptación:** existe una vía separada para administrar la plataforma y un modelo de
-planes premium funcionando de punta a punta (alta, cobro o simulación, acceso diferenciado).
+**Criterio de aceptación:** CRUD completo de contenido/usuarios desde el panel (v0.10 dejó la
+arquitectura lista, no el CRUD), Analytics y un modelo de planes premium funcionando de punta a punta
+(alta, cobro o simulación, acceso diferenciado).
 
 ---
 

@@ -20,6 +20,8 @@ function Explore() {
         {
           genre: filters.genre,
           type: filters.type,
+          status: filters.status,
+          minScore: filters.minScore,
           year: filters.year,
           orderBy: order.orderBy,
           sort: order.sort,
@@ -28,7 +30,8 @@ function Explore() {
         },
         signal,
       ),
-    [filters.genre, filters.type, filters.year, filters.order, page],
+    [filters.genre, filters.type, filters.status, filters.minScore, filters.year, filters.order, page],
+    { cacheKey: `explore:${JSON.stringify(filters)}:${page}` },
   )
 
   const handleFiltersChange = (next) => {
@@ -40,7 +43,7 @@ function Explore() {
     <Container className="pt-28 pb-16">
       <h1 className="font-display text-2xl font-bold text-text sm:text-3xl">Explorar</h1>
       <p className="mt-1 text-sm text-text-secondary">
-        Descubre anime por género, tipo, año y popularidad.
+        Descubre anime por género, formato, estado, año y puntuación.
       </p>
 
       <Filters value={filters} onChange={handleFiltersChange} className="mt-6" />

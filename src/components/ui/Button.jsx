@@ -1,10 +1,9 @@
 import { cn } from '@/utils/cn'
 
 const VARIANTS = {
-  primary:
-    'brand-gradient-bg text-background font-semibold hover:brightness-110 active:brightness-95',
-  secondary: 'bg-surface-hover text-text hover:bg-border border border-border',
-  ghost: 'bg-transparent text-text-secondary hover:text-text hover:bg-surface-hover',
+  primary: 'bg-primary text-white hover:bg-primary-hover font-semibold',
+  secondary: 'bg-card text-text hover:bg-hover border border-border',
+  ghost: 'bg-transparent text-text-secondary hover:text-text hover:bg-hover',
 }
 
 const SIZES = {
@@ -16,6 +15,12 @@ const SIZES = {
 /**
  * Base button primitive. Domain-specific buttons (e.g. "Ver Ahora",
  * "Mi Lista") should compose this rather than duplicate styles.
+ *
+ * Primary is a solid fill (not the Primary→Secondary gradient) on purpose:
+ * Secondary (#7C5CFF) reads closer to violet, and the brand rule is "no
+ * morado" as a decorative/brand color — reserving it for occasional small
+ * accents (see .brand-gradient-bg) keeps it from dominating the single
+ * most-repeated element in the UI.
  */
 function Button({
   as: Component = 'button',

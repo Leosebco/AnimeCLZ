@@ -10,7 +10,7 @@ function ExploreBanner() {
       <Container>
         <div className="flex flex-col items-start gap-4 rounded-xl border border-border bg-surface px-6 py-8 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-4">
-            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-surface-hover text-primary">
+            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-card text-primary">
               <Compass size={22} aria-hidden />
             </span>
             <div>

@@ -7,9 +7,69 @@ export const ROUTES = {
   SEASON: '/temporada',
   TOP: '/top',
   MY_LIST: '/mi-lista',
+  FAVORITES: '/favoritos',
+  HISTORY: '/historial',
   SEARCH: '/buscar',
   PROFILE: '/perfil',
+  PROFILE_SELECT: '/perfiles',
+  SETTINGS: '/configuracion',
+  ABOUT: '/acerca',
   ANIME_DETAIL: '/anime/:id',
+  LOGIN: '/iniciar-sesion',
+  REGISTER: '/crear-cuenta',
+  FORGOT_PASSWORD: '/recuperar-contrasena',
+  RESET_PASSWORD: '/restablecer-contrasena',
+  ADMIN_DASHBOARD: '/admin',
+  ADMIN_ANIMES: '/admin/animes',
+  ADMIN_SEASONS: '/admin/temporadas',
+  ADMIN_EPISODES: '/admin/episodios',
+  ADMIN_CHARACTERS: '/admin/personajes',
+  ADMIN_STUDIOS: '/admin/estudios',
+  ADMIN_NEWS: '/admin/noticias',
+  ADMIN_USERS: '/admin/usuarios',
+  ADMIN_COMMENTS: '/admin/comentarios',
+  ADMIN_SETTINGS: '/admin/configuracion',
+}
+
+// Mismos valores de rol en dos lugares (columna `role` en `profiles` =
+// cuenta, migración 0008; columna `rol` en `profiles_account` = perfil,
+// migración 0009) — el rol que realmente controla el acceso al Panel de
+// Administración es el del PERFIL activo (ver ProtectedRoute + useProfile),
+// no el de la cuenta. "usuario" es el rol por defecto de cualquier perfil
+// nuevo y no tiene acceso al panel; los otros tres sí (ver STAFF_ROLES).
+export const ROLES = {
+  ADMIN: 'admin',
+  EDITOR: 'editor',
+  MODERATOR: 'moderador',
+  USER: 'usuario',
+}
+
+export const ROLE_LABELS = {
+  admin: 'Administrador',
+  editor: 'Editor',
+  moderador: 'Moderador',
+  usuario: 'Usuario',
+}
+
+export const STAFF_ROLES = [ROLES.ADMIN, ROLES.EDITOR, ROLES.MODERATOR]
+
+// Paleta acotada para el color de un perfil (círculo/avatar de iniciales) —
+// todos son variantes de la paleta oficial de marca (ver DESIGN.md), nunca
+// rojo/amarillo/naranja.
+export const PROFILE_COLORS = [
+  '#4F8CFF', // Primary
+  '#7C5CFF', // Secondary
+  '#22C55E',
+  '#06B6D4',
+  '#EC4899',
+  '#14B8A6',
+]
+
+// tipo_avatar de profiles_account.
+export const AVATAR_TYPES = {
+  INITIAL: 'inicial',
+  UPLOAD: 'subida',
+  CHARACTER: 'personaje',
 }
 
 export function animeDetailPath(id) {
@@ -23,24 +83,23 @@ export const NAV_LINKS = [
   { label: 'Explorar', path: ROUTES.EXPLORE },
   { label: 'Temporada', path: ROUTES.SEASON },
   { label: 'Top', path: ROUTES.TOP },
-  { label: 'Mi Lista', path: ROUTES.MY_LIST },
 ]
 
+// Reemplaza los links de relleno (en inglés, a rutas que no existían) por
+// anclas reales dentro de /acerca — cada sección de esa página tiene un
+// id que coincide con el hash de abajo (ver About.jsx).
 export const FOOTER_LINKS = {
-  Company: [
-    { label: 'About', path: '/about' },
-    { label: 'Careers', path: '/careers' },
-    { label: 'Newsroom', path: '/newsroom' },
+  AnimeCLZ: [
+    { label: 'Acerca de', path: `${ROUTES.ABOUT}` },
+    { label: 'Tecnologías', path: `${ROUTES.ABOUT}#tecnologias` },
+    { label: 'Preguntas frecuentes', path: `${ROUTES.ABOUT}#preguntas-frecuentes` },
   ],
-  Support: [
-    { label: 'Help Center', path: '/help' },
-    { label: 'Contact Us', path: '/contact' },
-    { label: 'Device Support', path: '/devices' },
+  Soporte: [
+    { label: 'Contacto', path: `${ROUTES.ABOUT}#contacto` },
   ],
   Legal: [
-    { label: 'Terms of Use', path: '/terms' },
-    { label: 'Privacy', path: '/privacy' },
-    { label: 'Cookie Preferences', path: '/cookies' },
+    { label: 'Términos y condiciones', path: `${ROUTES.ABOUT}#terminos` },
+    { label: 'Política de privacidad', path: `${ROUTES.ABOUT}#privacidad` },
   ],
 }
 
@@ -112,4 +171,20 @@ export const ORDER_OPTIONS = [
   { value: 'score', label: 'Puntuación', orderBy: 'score', sort: 'desc' },
   { value: 'title', label: 'Título (A-Z)', orderBy: 'title', sort: 'asc' },
   { value: 'newest', label: 'Más recientes', orderBy: 'start_date', sort: 'desc' },
+]
+
+// Jikan's `status` search param (distinct from the raw per-anime `status`
+// field in STATUS_LABELS above, which uses different string values).
+export const ANIME_STATUS = [
+  { value: 'airing', label: 'En emisión' },
+  { value: 'complete', label: 'Finalizado' },
+  { value: 'upcoming', label: 'Próximamente' },
+]
+
+// Jikan's `min_score` search param (0-10 scale).
+export const MIN_SCORE_OPTIONS = [
+  { value: '9', label: '9+' },
+  { value: '8', label: '8+' },
+  { value: '7', label: '7+' },
+  { value: '6', label: '6+' },
 ]

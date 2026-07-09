@@ -1,52 +1,34 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useContext, useMemo } from 'react'
+import { useAuth } from '@/hooks/useAuth'
+import { useUserCollection } from '@/hooks/useUserCollection'
+import { addFavorite, listFavorites, removeFavorite } from '@/services/favoritesService'
 
-const STORAGE_KEY = 'animeclz:favorites'
 const FavoritesContext = createContext(null)
 
-function readStoredFavorites() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    return raw ? JSON.parse(raw) : []
-  } catch {
-    return []
-  }
-}
-
 /**
- * Client-side "Mi Lista" store, backed by localStorage today. Consumers
- * only ever call useFavorites() — swapping the storage for Firebase later
- * (Sprint 4) won't require touching Hero/AnimeCard/MyList.
+ * "Favoritos" (♥) — persistido en Supabase por usuario (tabla `favorites`).
+ * Distinto de "Mi Lista" (ver WatchLaterContext): favorito es "me gusta",
+ * Mi Lista es "quiero verlo después". Requiere sesión — los componentes
+ * que exponen el botón de favorito deben verificar useAuth().isAuthenticated
+ * antes de llamar a toggleFavorite.
  */
 export function FavoritesProvider({ children }) {
-  const [favorites, setFavorites] = useState(readStoredFavorites)
-
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(favorites))
-  }, [favorites])
-
-  const isFavorite = useCallback(
-    (id) => favorites.some((item) => item.id === id),
-    [favorites],
-  )
-
-  const toggleFavorite = useCallback((anime) => {
-    setFavorites((prev) =>
-      prev.some((item) => item.id === anime.id)
-        ? prev.filter((item) => item.id !== anime.id)
-        : [...prev, anime],
-    )
-  }, [])
+  const { user } = useAuth()
+  const { items, isSaved, toggle, loading } = useUserCollection({
+    userId: user?.id ?? null,
+    list: listFavorites,
+    add: addFavorite,
+    remove: removeFavorite,
+  })
 
   const value = useMemo(
-    () => ({ favorites, isFavorite, toggleFavorite }),
-    [favorites, isFavorite, toggleFavorite],
+    () => ({ favorites: items, isFavorite: isSaved, toggleFavorite: toggle, loading }),
+    [items, isSaved, toggle, loading],
   )
 
   return <FavoritesContext.Provider value={value}>{children}</FavoritesContext.Provider>
 }
 
-// Hook is intentionally colocated with its provider; splitting into another
-// file just to satisfy Fast Refresh isn't worth the indirection here.
 // eslint-disable-next-line react-refresh/only-export-components
 export function useFavorites() {
   const context = useContext(FavoritesContext)

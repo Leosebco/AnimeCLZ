@@ -18,8 +18,8 @@ function ErrorState({
       <span
         className={
           compact
-            ? 'flex h-12 w-12 items-center justify-center rounded-full bg-surface-hover'
-            : 'flex h-16 w-16 items-center justify-center rounded-full bg-surface-hover'
+            ? 'flex h-12 w-12 items-center justify-center rounded-full bg-card'
+            : 'flex h-16 w-16 items-center justify-center rounded-full bg-card'
         }
       >
         <AlertTriangle className="text-error" size={compact ? 22 : 28} aria-hidden />

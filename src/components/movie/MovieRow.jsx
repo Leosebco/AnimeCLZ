@@ -20,7 +20,9 @@ const arrowClass = (visible) =>
  * AnimeDetail's "Recomendados") renders this same component with a
  * different title/dataset. Home rows hide silently on empty (no
  * `emptyState`); pass `emptyState` where an explicit "sin resultados" state
- * is expected instead.
+ * is expected instead. Mouse/trackpad/touch all move the row: native touch
+ * scroll, a vertical mouse wheel redirected to horizontal (Netflix-style),
+ * and the side arrow buttons.
  */
 function MovieRow({ title, movies, loading, error, onRetry, emptyState }) {
   const scrollerRef = useRef(null)
@@ -38,10 +40,26 @@ function MovieRow({ title, movies, loading, error, onRetry, emptyState }) {
     updateArrows()
     const el = scrollerRef.current
     if (!el) return
+
+    // A plain vertical mouse-wheel gesture over the row scrolls it
+    // horizontally instead of scrolling the page — the classic Netflix-row
+    // feel. A real horizontal trackpad swipe (deltaX already dominant) is
+    // left alone. Needs a native listener (not JSX onWheel) because React
+    // attaches wheel handlers as passive, which silently ignores
+    // preventDefault.
+    const handleWheel = (event) => {
+      if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return
+      if (el.scrollWidth <= el.clientWidth) return
+      event.preventDefault()
+      el.scrollLeft += event.deltaY
+    }
+
     el.addEventListener('scroll', updateArrows, { passive: true })
+    el.addEventListener('wheel', handleWheel, { passive: false })
     window.addEventListener('resize', updateArrows)
     return () => {
       el.removeEventListener('scroll', updateArrows)
+      el.removeEventListener('wheel', handleWheel)
       window.removeEventListener('resize', updateArrows)
     }
   }, [movies])
@@ -67,7 +85,7 @@ function MovieRow({ title, movies, loading, error, onRetry, emptyState }) {
         </Container>
       ) : isEmpty ? (
         <Container>
-          <EmptyState compact {...emptyState} />
+          <EmptyState compact onRetry={onRetry} {...emptyState} />
         </Container>
       ) : loading ? (
         <div className="flex gap-5 overflow-x-hidden px-4 pb-2 sm:px-6 lg:px-8">

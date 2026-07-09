@@ -1,14 +1,25 @@
 import { useEffect, useState } from 'react'
-import { Link, NavLink } from 'react-router-dom'
+import { Link, NavLink, useNavigate } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Clapperboard, Search, Menu, X, UserRound } from 'lucide-react'
+import { Clapperboard, Menu, X } from 'lucide-react'
 import { NAV_LINKS, ROUTES } from '@/constants'
 import Container from '@/components/ui/Container'
+import NavbarSearch from './NavbarSearch'
+import AccountMenu from './AccountMenu'
+import { useAuth } from '@/hooks/useAuth'
 import { cn } from '@/utils/cn'
 
 function Navbar() {
+  const { isAuthenticated, signOut } = useAuth()
+  const navigate = useNavigate()
   const [isScrolled, setIsScrolled] = useState(false)
   const [isMenuOpen, setIsMenuOpen] = useState(false)
+
+  const handleMobileSignOut = async () => {
+    setIsMenuOpen(false)
+    await signOut()
+    navigate(ROUTES.HOME)
+  }
 
   useEffect(() => {
     const onScroll = () => setIsScrolled(window.scrollY > 8)
@@ -20,8 +31,10 @@ function Navbar() {
   return (
     <header
       className={cn(
-        'fixed top-0 left-0 right-0 z-50 border-b backdrop-blur-xl transition-colors duration-300',
-        isScrolled ? 'bg-background/80 border-border' : 'bg-background/40 border-transparent',
+        'fixed top-0 left-0 right-0 z-50 border-b backdrop-blur-xl transition-all duration-300',
+        isScrolled
+          ? 'bg-background/70 border-border shadow-[0_8px_30px_-15px_rgba(0,0,0,0.6)]'
+          : 'bg-background/30 border-transparent',
       )}
     >
       <Container className="flex h-18 items-center justify-between py-3">
@@ -30,7 +43,7 @@ function Navbar() {
           AnimeCLZ
         </Link>
 
-        <nav className="hidden md:flex items-center gap-1 rounded-full border border-border/60 bg-surface/40 p-1">
+        <nav className="hidden md:flex items-center gap-1 rounded-full border border-border bg-surface/40 p-1">
           {NAV_LINKS.map((link) => (
             <NavLink
               key={link.path}
@@ -43,7 +56,7 @@ function Navbar() {
                   {isActive && (
                     <motion.span
                       layoutId="nav-active-pill"
-                      className="absolute inset-0 rounded-full bg-surface-hover"
+                      className="absolute inset-0 rounded-full bg-card"
                       transition={{ type: 'spring', stiffness: 400, damping: 34 }}
                     />
                   )}
@@ -55,25 +68,13 @@ function Navbar() {
         </nav>
 
         <div className="flex items-center gap-1.5">
-          <Link
-            to={ROUTES.SEARCH}
-            aria-label="Buscar"
-            className="p-2.5 rounded-full text-text-secondary transition-colors hover:bg-surface-hover hover:text-text"
-          >
-            <Search size={19} />
-          </Link>
-          <Link
-            to={ROUTES.PROFILE}
-            aria-label="Perfil"
-            className="hidden sm:inline-flex p-2.5 rounded-full text-text-secondary transition-colors hover:bg-surface-hover hover:text-text"
-          >
-            <UserRound size={19} />
-          </Link>
+          <NavbarSearch />
+          <AccountMenu />
 
           <button
             aria-label={isMenuOpen ? 'Cerrar menú' : 'Abrir menú'}
             onClick={() => setIsMenuOpen((open) => !open)}
-            className="md:hidden p-2.5 rounded-full text-text transition-colors hover:bg-surface-hover"
+            className="md:hidden p-2.5 rounded-full text-text transition-colors hover:bg-hover"
           >
             {isMenuOpen ? <X size={21} /> : <Menu size={21} />}
           </button>
@@ -86,8 +87,8 @@ function Navbar() {
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="md:hidden overflow-hidden border-b border-border bg-background"
+            transition={{ duration: 0.22, ease: 'easeOut' }}
+            className="md:hidden overflow-hidden border-b border-border bg-background/95 backdrop-blur-xl"
           >
             <Container className="flex flex-col gap-1 py-3">
               {NAV_LINKS.map((link) => (
@@ -100,21 +101,65 @@ function Navbar() {
                     cn(
                       'rounded-full px-4 py-2.5 text-sm font-medium transition-colors',
                       isActive
-                        ? 'bg-surface-hover text-text'
-                        : 'text-text-secondary hover:bg-surface-hover hover:text-text',
+                        ? 'bg-card text-text'
+                        : 'text-text-secondary hover:bg-hover hover:text-text',
                     )
                   }
                 >
                   {link.label}
                 </NavLink>
               ))}
-              <Link
-                to={ROUTES.PROFILE}
-                onClick={() => setIsMenuOpen(false)}
-                className="mt-2 rounded-full px-4 py-2.5 text-sm font-medium text-text-secondary hover:bg-surface-hover hover:text-text"
-              >
-                Perfil
-              </Link>
+              <div className="mt-2 flex flex-col gap-1 border-t border-border pt-2">
+                {isAuthenticated ? (
+                  <>
+                    <Link
+                      to={ROUTES.PROFILE}
+                      onClick={() => setIsMenuOpen(false)}
+                      className="rounded-full px-4 py-2.5 text-sm font-medium text-text-secondary hover:bg-hover hover:text-text"
+                    >
+                      Perfil
+                    </Link>
+                    <Link
+                      to={ROUTES.MY_LIST}
+                      onClick={() => setIsMenuOpen(false)}
+                      className="rounded-full px-4 py-2.5 text-sm font-medium text-text-secondary hover:bg-hover hover:text-text"
+                    >
+                      Mi Lista
+                    </Link>
+                    <Link
+                      to={ROUTES.FAVORITES}
+                      onClick={() => setIsMenuOpen(false)}
+                      className="rounded-full px-4 py-2.5 text-sm font-medium text-text-secondary hover:bg-hover hover:text-text"
+                    >
+                      Favoritos
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={handleMobileSignOut}
+                      className="rounded-full px-4 py-2.5 text-left text-sm font-medium text-error hover:bg-hover"
+                    >
+                      Cerrar sesión
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <Link
+                      to={ROUTES.LOGIN}
+                      onClick={() => setIsMenuOpen(false)}
+                      className="rounded-full px-4 py-2.5 text-sm font-medium text-text-secondary hover:bg-hover hover:text-text"
+                    >
+                      Iniciar sesión
+                    </Link>
+                    <Link
+                      to={ROUTES.REGISTER}
+                      onClick={() => setIsMenuOpen(false)}
+                      className="rounded-full bg-primary px-4 py-2.5 text-center text-sm font-semibold text-white hover:bg-primary-hover"
+                    >
+                      Crear cuenta
+                    </Link>
+                  </>
+                )}
+              </div>
             </Container>
           </motion.nav>
         )}

@@ -10,7 +10,11 @@ suaves, sin copiar Netflix/Crunchyroll).
 
 **Revisión Sprint 3.6:** refinamiento visual/UX — selects nativos reemplazados por `Select` (sección 9),
 card sin botón "Ver detalles" (sección 8), transición de página y duración por defecto de animaciones
-(sección 10). Todo lo demás sigue vigente salvo donde se indique lo contrario.
+(sección 10).
+
+**Revisión v0.8:** segundo rediseño de paleta (azul más profundo, ver sección 2), Hero pasa a carrusel,
+`ChipGroup` se suma a `Select` como segundo patrón de filtro (sección 9), regla de calidad de imagen
+para pósters (sección 8). Todo lo demás sigue vigente salvo donde se indique lo contrario.
 
 ---
 
@@ -31,40 +35,43 @@ card sin botón "Ver detalles" (sección 8), transición de página y duración 
 
 ## 2. Color
 
-### Paleta oficial (Sprint 3.5)
+### Paleta oficial (v0.8)
 
 | Token | Hex | Uso |
 |---|---|---|
-| Background | `#050505` | Fondo base de toda la app |
-| Surface | `#101010` | Navbar, footer, paneles, filas de contenido |
-| Surface Hover | `#181818` | Cards en reposo y hover de cualquier superficie interactiva |
-| Border | `#2B2B2B` | Divisores, contornos sutiles, anillos de tarjetas |
-| Primary | `#6EA8FE` | CTA principal, estado activo, foco, badges de rating |
-| Secondary | `#87C4FF` | Pareja del Primary en gradientes suaves; nunca solo |
-| Text | `#F5F5F5` | Texto principal sobre fondos oscuros |
-| Text Secondary | `#A5A5A5` | Texto de apoyo (metadatos, subtítulos, placeholders) |
+| Background | `#07111F` | Fondo base de toda la app |
+| Surface | `#0F172A` | Navbar, footer, paneles, filas de contenido |
+| Card | `#162033` | Cards en reposo |
+| Hover | `#1E2D47` | Hover de cualquier superficie interactiva (distinto de `Card` en reposo) |
+| Border | `rgba(255,255,255,.08)` | Divisores, contornos sutiles, anillos de tarjetas |
+| Primary | `#4F8CFF` | CTA principal, estado activo, foco, badges de rating |
+| Primary Hover | `#6AA5FF` | Hover de elementos de relleno sólido en `Primary` |
+| Secondary | `#7C5CFF` | Acento puntual (insignias, algún gradiente) — nunca el botón primario |
+| Text | `#FFFFFF` | Texto principal sobre fondos oscuros |
+| Text Secondary | `#C5D0E6` | Texto de apoyo (metadatos, subtítulos, placeholders) |
 | Error | `#F87171` | Únicamente para estados de error (icono/texto); nunca decorativo |
 
-Prohibido como color de marca/decorativo: rojo, amarillo, naranja, morado. (El `Error` es la única
-excepción, y solo porque el rojo-de-alerta es una convención de accesibilidad casi universal — no
-compite con `Primary`, que ahora es azul.)
+Prohibido como color de marca/decorativo: rojo, amarillo, naranja. `Secondary` es azul-violeta — la
+única excepción a "no morado" — y por eso se limita a acentos puntuales, nunca al botón `primary` ni a
+un fondo grande, para que no termine leyéndose como un segundo color de marca compitiendo con `Primary`.
+`Error` es la otra excepción, y solo porque el rojo-de-alerta es una convención de accesibilidad casi
+universal.
 
 ### Reglas de uso
 
 - **Primary + Secondary son un dúo, no dos acentos compitiendo.** Se usan juntos en gradientes muy
   suaves (botón primario, algún acento puntual); no se usa `Secondary` solo como si fuera un segundo
   color de marca independiente.
-- Jerarquía de fondos: `Background` → `Surface` → `Surface Hover`, de más al fondo a más elevado. No
-  saltar jerarquía (no poner `Surface Hover` directamente sobre `Background` sin razón de elevación).
+- Jerarquía de fondos: `Background` → `Surface` → `Card`/`Hover`, de más al fondo a más elevado. No
+  saltar jerarquía (no poner `Card`/`Hover` directamente sobre `Background` sin razón de elevación).
 - `Text Secondary` se usa para todo lo que sea secundario por definición (fechas, duración, géneros,
   ayudas), nunca para texto que el usuario deba leer primero.
-- Estados sobre `Primary`: en botones de gradiente, un `brightness` más alto al hover (no un color
-  distinto); en elementos de relleno sólido, se puede pasar a `Secondary` como transición de hover.
+- Estados sobre `Primary`: usar el token `Primary Hover` explícito (no un `brightness`/opacidad
+  improvisado) en botones y elementos de relleno sólido.
 - Los overlays sobre imágenes (para legibilidad de texto) se construyen con `Background` en degradado de
   opacidad (transparente → opaco), nunca con negro puro fuera de la paleta.
-- Gradientes: solo entre `Primary` y `Secondary` (dos tonos de azul muy próximos, nunca un salto de
-  color fuerte), y solo en acentos puntuales (botón primario, algún ícono) — nunca como fondo de una
-  pantalla completa.
+- Gradientes: solo entre `Primary` y `Secondary`, y solo en acentos puntuales (una insignia, un ícono) —
+  nunca en el botón `primary` (queda sólido, ver sección 7) ni como fondo de una pantalla completa.
 
 ---
 
@@ -119,8 +126,8 @@ Sistema basado en una unidad base de 4px (escala: 4, 8, 12, 16, 20, 24, 32, 40, 
 
 ## 5. Bordes y radios
 
-- **Color de borde único:** `Border` (`#2A2A2A`) para cualquier contorno o divisor. No se usan otros
-  grises fuera de la paleta para bordes.
+- **Color de borde único:** `Border` (blanco translúcido, `rgba(255,255,255,.08)`) para cualquier
+  contorno o divisor. No se usan otros grises/colores fuera de la paleta para bordes.
 - **Radios por tipo de elemento (Sprint 3.5: todo más redondeado que antes):**
   - Pequeño (badges, chips, tags de género): esquinas suavizadas, apenas perceptibles.
   - Grande (cards de póster, paneles, tarjetas de estadísticas del Hero): esquinas notablemente
@@ -190,6 +197,11 @@ componente en distinta escala. Todos los tamaños son píldora (radio completo).
 Anatomía, de atrás hacia adelante:
 
 1. **Imagen** en relación de aspecto vertical fija (proporción de póster), cubriendo toda la card.
+   Regla de calidad (v0.8): **nunca estirar un póster.** Jikan no da un banner panorámico real —
+   cuando hace falta una imagen ancha (Hero, banner de `AnimeDetail`) el patrón es un fondo ambiental
+   con el mismo póster desenfocado y escalado detrás, y el póster nítido se muestra aparte, siempre en
+   su relación de aspecto real (`aspect-[2/3]`). `poster`/`posterSmall` del modelo de datos alimentan un
+   `srcset` (`1x`/`2x`) simple en vez de servir siempre la versión más pesada.
 2. **Degradado de legibilidad**, siempre presente aunque discreto: de `Background` opaco abajo a
    transparente arriba, para que el texto inferior sea legible sobre cualquier imagen.
 3. **Overlay de hover (Sprint 3.6 — sin botón):** revela tres íconos simples y centrados — Ver (▶),
@@ -217,14 +229,20 @@ Anatomía, de atrás hacia adelante:
 
 ## 9. Formularios
 
-- **Ningún `<select>` nativo (Sprint 3.6).** Todos los selects (Género, Tipo, Orden, Año en Filtros) usan
-  el componente `Select` (`components/ui/Select.jsx`, sobre Headless UI `Listbox`): disparador píldora
-  con ícono + valor + chevron, panel flotante con blur/sombra/scroll personalizado, checkmark en la
-  opción activa, apertura/cierre animado con Framer Motion.
-- Los inputs de texto (buscador) comparten el mismo lenguaje: píldora, `bg-surface-hover`, borde
-  `Border`, foco en `Primary`.
-- Un `Select` nuevo se construye componiendo el existente (pasar `options`/`value`/`onChange`), nunca
-  copiando su JSX para un caso puntual.
+- **Ningún `<select>` nativo.** Dos patrones cubren todos los filtros, según cuántas opciones tengan:
+  - **`Select`** (`components/ui/Select.jsx`, Headless UI `Listbox`) para listas largas (Orden, Año):
+    disparador píldora con ícono + valor + chevron, panel flotante con blur/sombra/scroll personalizado,
+    checkmark en la opción activa, apertura/cierre animado con Framer Motion.
+  - **`ChipGroup`** (`components/ui/ChipGroup.jsx`, v0.8) para listas cortas donde ver todas las
+    opciones de un vistazo vale más que ahorrar espacio (Género, Formato, Estado, Puntuación): fila de
+    píldoras, selección única, un resaltado que se desliza entre chips (mismo patrón `layoutId` que el
+    indicador activo del Navbar).
+  - Un filtro nuevo usa `ChipGroup` si tiene pocas opciones fijas, y `Select` si la lista es larga o
+    dinámica — no se inventa un tercer patrón de filtro.
+- Los inputs de texto (buscador) comparten el mismo lenguaje: píldora, `bg-card`, borde `Border`, foco
+  en `Primary`.
+- Un `Select`/`ChipGroup` nuevo se construye componiendo el existente (pasar `options`/`value`/
+  `onChange`), nunca copiando su JSX para un caso puntual.
 
 ---
 

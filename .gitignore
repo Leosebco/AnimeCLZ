@@ -10,3 +10,7 @@ dist-ssr
 .vscode/*
 !.vscode/extensions.json
 .idea
+
+# Supabase CLI local cache/session state (project ref, pooler host, etc.)
+# — machine-local, not project source.
+supabase/.temp

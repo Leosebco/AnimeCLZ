@@ -1,11 +1,11 @@
-import { Heart } from 'lucide-react'
+import { Bookmark } from 'lucide-react'
 import Container from '@/components/ui/Container'
 import EmptyState from '@/components/ui/EmptyState'
 import AnimeCard from '@/components/movie/AnimeCard'
-import { useFavorites } from '@/context/FavoritesContext'
+import { useWatchLater } from '@/context/WatchLaterContext'
 
 function MyList() {
-  const { favorites } = useFavorites()
+  const { watchLater } = useWatchLater()
 
   return (
     <Container className="pt-28 pb-16">
@@ -15,15 +15,15 @@ function MyList() {
       </p>
 
       <div className="mt-8">
-        {favorites.length === 0 ? (
+        {watchLater.length === 0 ? (
           <EmptyState
-            icon={Heart}
+            icon={Bookmark}
             title="Tu lista está vacía"
-            description="Agrega animes desde el inicio o el catálogo tocando el corazón de cualquier tarjeta."
+            description="Agrega animes desde el inicio o el catálogo para verlos más tarde."
           />
         ) : (
           <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-            {favorites.map((movie) => (
+            {watchLater.map((movie) => (
               <AnimeCard key={movie.id} movie={movie} />
             ))}
           </div>

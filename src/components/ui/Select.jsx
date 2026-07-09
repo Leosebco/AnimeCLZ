@@ -18,7 +18,7 @@ function Select({ value, onChange, options, ariaLabel, icon: Icon, className }) 
         <div className={cn('relative', className)}>
           <ListboxButton
             aria-label={ariaLabel}
-            className="flex w-full items-center gap-2 rounded-full border border-border bg-surface-hover px-4 py-2 text-sm text-text transition-colors hover:border-primary/60 focus-visible:outline-2 focus-visible:outline-primary"
+            className="flex w-full items-center gap-2 rounded-full border border-border bg-card px-4 py-2 text-sm text-text transition-colors hover:border-primary/60 focus-visible:outline-2 focus-visible:outline-primary"
           >
             {Icon && <Icon size={14} className="shrink-0 text-text-secondary" aria-hidden />}
             <span className="truncate">{selected?.label}</span>
@@ -51,7 +51,7 @@ function Select({ value, onChange, options, ariaLabel, icon: Icon, className }) 
                     className={({ focus, selected }) =>
                       cn(
                         'flex cursor-pointer items-center justify-between gap-2 rounded-xl px-3 py-2 text-sm transition-colors',
-                        focus ? 'bg-surface-hover text-text' : 'text-text-secondary',
+                        focus ? 'bg-card text-text' : 'text-text-secondary',
                         selected && 'text-text',
                       )
                     }

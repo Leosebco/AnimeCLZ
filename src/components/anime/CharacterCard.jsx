@@ -1,6 +1,8 @@
+import { memo } from 'react'
+
 function CharacterCard({ character }) {
   return (
-    <div className="flex items-center gap-3 rounded-xl border border-border bg-surface-hover p-3 transition-colors hover:border-primary/40">
+    <div className="flex items-center gap-3 rounded-xl border border-border bg-card p-3 transition-colors hover:border-primary/40">
       <img
         src={character.image}
         alt={character.name}
@@ -18,4 +20,4 @@ function CharacterCard({ character }) {
   )
 }
 
-export default CharacterCard
+export default memo(CharacterCard)

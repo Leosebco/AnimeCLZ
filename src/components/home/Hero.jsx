@@ -1,118 +1,247 @@
-import { Link } from 'react-router-dom'
-import { motion } from 'framer-motion'
-import { Play, Heart, Star } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
+import { AnimatePresence, motion } from 'framer-motion'
+import { Play, Heart, Bookmark, Star } from 'lucide-react'
 import Container from '@/components/ui/Container'
 import Button from '@/components/ui/Button'
 import LoadingState from '@/components/ui/LoadingState'
 import ErrorState from '@/components/ui/ErrorState'
-import { animeDetailPath, STATUS_LABELS } from '@/constants'
+import { animeDetailPath, ROUTES, STATUS_LABELS } from '@/constants'
 import { useFavorites } from '@/context/FavoritesContext'
+import { useWatchLater } from '@/context/WatchLaterContext'
+import { useAuth } from '@/hooks/useAuth'
+import { cn } from '@/utils/cn'
 
-const container = {
-  hidden: {},
-  visible: { transition: { staggerChildren: 0.1, delayChildren: 0.15 } },
-}
+const AUTOPLAY_MS = 8000
+const SWIPE_THRESHOLD = 80
 
-const item = {
-  hidden: { opacity: 0, y: 20 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.28, ease: 'easeOut' } },
+const fadeSlide = {
+  hidden: { opacity: 0, x: 24 },
+  visible: { opacity: 1, x: 0 },
+  exit: { opacity: 0, x: -24 },
 }
 
 /**
- * Home hero — always a real, currently top-rated anime from Jikan
- * (see getFeaturedAnime in animeService). No fabricated "featured" content.
+ * Home hero — a carousel of several real, currently top-rated anime
+ * (see getFeaturedSlides in animeService). No fabricated "featured" flag,
+ * no stock imagery: the ambient background is the anime's own poster,
+ * blurred, so a portrait image never has to be stretched into a landscape
+ * banner Jikan doesn't provide.
  */
-function Hero({ anime, loading, error, onRetry }) {
+function Hero({ slides, loading, error, onRetry }) {
+  const { isAuthenticated } = useAuth()
   const { isFavorite, toggleFavorite } = useFavorites()
+  const { isInWatchLater, toggleWatchLater } = useWatchLater()
+  const navigate = useNavigate()
+  const [index, setIndex] = useState(0)
+  const [paused, setPaused] = useState(false)
+
+  const count = slides?.length ?? 0
+
+  useEffect(() => {
+    if (paused || count < 2) return
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    const id = setInterval(() => setIndex((i) => (i + 1) % count), AUTOPLAY_MS)
+    return () => clearInterval(id)
+  }, [paused, count, index])
 
   if (loading) return <LoadingState variant="hero" />
   if (error) return <ErrorState onRetry={onRetry} />
-  if (!anime) return null
+  if (!count) return null
 
+  const anime = slides[index % count]
   const favorite = isFavorite(anime.id)
+  const inWatchLater = isInWatchLater(anime.id)
   const synopsis =
     anime.synopsis && anime.synopsis.length > 280
       ? `${anime.synopsis.slice(0, 280).trim()}…`
       : anime.synopsis
 
+  const goTo = (next) => setIndex(((next % count) + count) % count)
+
+  const handleDragEnd = (_event, info) => {
+    if (info.offset.x < -SWIPE_THRESHOLD) goTo(index + 1)
+    else if (info.offset.x > SWIPE_THRESHOLD) goTo(index - 1)
+  }
+
+  const requireAuth = (action) => {
+    if (!isAuthenticated) {
+      navigate(ROUTES.LOGIN, { state: { from: { pathname: animeDetailPath(anime.id) } } })
+      return
+    }
+    action()
+  }
+
   return (
-    <section className="relative flex h-[86vh] min-h-[560px] w-full items-end overflow-hidden">
-      <div className="absolute inset-0">
-        <img src={anime.backdrop || anime.poster} alt="" className="h-full w-full object-cover" />
-        <div className="absolute inset-0 bg-gradient-to-t from-background via-background/75 to-background/10" />
-        <div className="absolute inset-0 bg-gradient-to-r from-background/95 via-background/40 to-transparent" />
-      </div>
+    <section
+      className="relative h-[92vh] min-h-[620px] w-full overflow-hidden"
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+    >
+      {/* Ambient background: the poster itself, blurred and scaled up — a
+          real image, never a stretched/pixelated stand-in banner. */}
+      <AnimatePresence mode="sync">
+        <motion.div
+          key={anime.id}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.6, ease: 'easeInOut' }}
+          className="absolute inset-0"
+        >
+          <img
+            src={anime.backdrop || anime.poster}
+            alt=""
+            className="h-full w-full scale-110 object-cover object-top blur-3xl opacity-60"
+            aria-hidden
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-background via-background/80 to-background/30" />
+          <div className="absolute inset-0 bg-gradient-to-r from-background/95 via-background/50 to-background/10" />
+        </motion.div>
+      </AnimatePresence>
 
-      <Container className="relative z-10 pb-14 sm:pb-16">
-        <motion.div variants={container} initial="hidden" animate="visible" className="max-w-2xl">
-          <motion.span
-            variants={item}
-            className="mb-5 inline-flex items-center rounded-full border border-border/70 bg-surface/50 px-3.5 py-1.5 text-xs uppercase tracking-widest text-text-secondary backdrop-blur-sm"
-          >
-            Destacado
-          </motion.span>
+      <Container className="relative z-10 flex h-full items-center pb-28 pt-20">
+        <motion.div
+          drag={count > 1 ? 'x' : false}
+          dragConstraints={{ left: 0, right: 0 }}
+          dragElastic={0.12}
+          onDragEnd={handleDragEnd}
+          className="flex w-full flex-col items-center gap-8 sm:flex-row sm:items-end"
+        >
+          <AnimatePresence mode="wait">
+            <motion.img
+              key={anime.id}
+              src={anime.poster}
+              srcSet={anime.posterSmall ? `${anime.posterSmall} 1x, ${anime.poster} 2x` : undefined}
+              alt={anime.title}
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              transition={{ duration: 0.4, ease: 'easeOut' }}
+              className="hidden aspect-[2/3] w-44 shrink-0 rounded-2xl object-cover ring-1 ring-border shadow-2xl sm:block md:w-56"
+            />
 
-          <motion.h1
-            variants={item}
-            className="font-display text-3xl font-bold leading-tight text-text sm:text-4xl lg:text-6xl"
-          >
-            {anime.title}
-          </motion.h1>
-
-          <motion.div
-            variants={item}
-            className="mt-4 flex flex-wrap items-center gap-3 text-sm text-text-secondary"
-          >
-            {typeof anime.score === 'number' && (
-              <span className="flex items-center gap-1 text-text">
-                <Star size={14} className="text-primary" fill="currentColor" />
-                {anime.score.toFixed(1)}
+            <motion.div
+              key={`${anime.id}-info`}
+              variants={fadeSlide}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+              transition={{ duration: 0.35, ease: 'easeOut' }}
+              className="max-w-2xl"
+            >
+              <span className="mb-5 inline-flex items-center rounded-full border border-border bg-surface/50 px-3.5 py-1.5 text-xs uppercase tracking-widest text-text-secondary backdrop-blur-sm">
+                Destacado
               </span>
-            )}
-            {anime.year && <span>{anime.year}</span>}
-            {anime.type && <span>{anime.type}</span>}
-            {anime.status && <span>{STATUS_LABELS[anime.status] || anime.status}</span>}
-          </motion.div>
 
-          {anime.genres?.length > 0 && (
-            <motion.div variants={item} className="mt-4 flex flex-wrap gap-2">
-              {anime.genres.slice(0, 4).map((genre) => (
-                <span
-                  key={genre}
-                  className="rounded-full border border-border/70 px-3 py-1 text-xs text-text-secondary"
+              <h1 className="font-display text-3xl font-bold leading-tight text-text sm:text-4xl lg:text-6xl">
+                {anime.title}
+              </h1>
+
+              <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-text-secondary">
+                {typeof anime.score === 'number' && (
+                  <span className="flex items-center gap-1 text-text">
+                    <Star size={14} className="text-primary" fill="currentColor" />
+                    {anime.score.toFixed(1)}
+                  </span>
+                )}
+                {anime.year && <span>{anime.year}</span>}
+                {anime.type && <span>{anime.type}</span>}
+                {anime.status && <span>{STATUS_LABELS[anime.status] || anime.status}</span>}
+              </div>
+
+              {anime.genres?.length > 0 && (
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {anime.genres.slice(0, 4).map((genre) => (
+                    <span
+                      key={genre}
+                      className="rounded-full border border-border px-3 py-1 text-xs text-text-secondary"
+                    >
+                      {genre}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {synopsis && (
+                <p className="mt-6 max-w-xl text-sm leading-relaxed text-text-secondary sm:text-base">
+                  {synopsis}
+                </p>
+              )}
+
+              <div className="mt-8 flex flex-wrap items-center gap-3">
+                <Button as={Link} to={animeDetailPath(anime.id)} size="lg">
+                  <Play size={18} fill="currentColor" />
+                  Ver Ahora
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="lg"
+                  onClick={() => requireAuth(() => toggleFavorite(anime))}
+                  aria-pressed={favorite}
                 >
-                  {genre}
-                </span>
-              ))}
+                  <Heart size={18} fill={favorite ? 'currentColor' : 'none'} />
+                  {favorite ? 'En Favoritos' : 'Favorito'}
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="lg"
+                  onClick={() => requireAuth(() => toggleWatchLater(anime))}
+                  aria-pressed={inWatchLater}
+                >
+                  <Bookmark size={18} fill={inWatchLater ? 'currentColor' : 'none'} />
+                  {inWatchLater ? 'En Mi Lista' : 'Mi Lista'}
+                </Button>
+              </div>
             </motion.div>
-          )}
-
-          {synopsis && (
-            <motion.p
-              variants={item}
-              className="mt-6 max-w-xl text-sm leading-relaxed text-text-secondary sm:text-base"
-            >
-              {synopsis}
-            </motion.p>
-          )}
-
-          <motion.div variants={item} className="mt-8 flex flex-wrap items-center gap-3">
-            <Button as={Link} to={animeDetailPath(anime.id)} size="lg">
-              <Play size={18} fill="currentColor" />
-              Ver Ahora
-            </Button>
-            <Button
-              variant="secondary"
-              size="lg"
-              onClick={() => toggleFavorite(anime)}
-              aria-pressed={favorite}
-            >
-              <Heart size={18} fill={favorite ? 'currentColor' : 'none'} />
-              {favorite ? 'En Mi Lista' : 'Mi Lista'}
-            </Button>
-          </motion.div>
+          </AnimatePresence>
         </motion.div>
       </Container>
+
+      {count > 1 && (
+        <>
+          <div className="absolute bottom-24 left-1/2 z-10 flex -translate-x-1/2 gap-2 sm:bottom-28">
+            {slides.map((slide, slideIndex) => (
+              <button
+                key={slide.id}
+                type="button"
+                aria-label={`Ir al destacado ${slideIndex + 1}`}
+                aria-current={slideIndex === index}
+                onClick={() => goTo(slideIndex)}
+                className={cn(
+                  'h-1.5 rounded-full transition-all duration-300',
+                  slideIndex === index ? 'w-6 bg-primary' : 'w-1.5 bg-white/30 hover:bg-white/50',
+                )}
+              />
+            ))}
+          </div>
+
+          <div className="absolute inset-x-0 bottom-0 z-10 hidden justify-center gap-3 pb-6 sm:flex">
+            {slides.slice(0, 6).map((slide, slideIndex) => (
+              <button
+                key={slide.id}
+                type="button"
+                aria-label={`Ver ${slide.title}`}
+                aria-current={slideIndex === index}
+                onClick={() => goTo(slideIndex)}
+                className={cn(
+                  'h-16 w-12 shrink-0 overflow-hidden rounded-lg ring-2 transition-all duration-200',
+                  slideIndex === index
+                    ? 'scale-105 ring-primary'
+                    : 'opacity-60 ring-transparent hover:opacity-100',
+                )}
+              >
+                <img
+                  src={slide.posterSmall || slide.poster}
+                  alt=""
+                  loading="lazy"
+                  className="h-full w-full object-cover"
+                />
+              </button>
+            ))}
+          </div>
+        </>
+      )}
     </section>
   )
 }

@@ -1,14 +1,32 @@
 import jikan from '@/api/jikan'
 
+// ---------------------------------------------------------------------
+// Data source note (v0.8): every function below talks to Jikan directly.
+// The canonical model (mapAnime/mapAnimeDetail) is what the rest of the
+// app actually consumes — pages/hooks never see Jikan's raw shape. That
+// separation is deliberate groundwork for a future Supabase migration:
+// when AnimeCLZ gets its own database, this file's exported function
+// *signatures* (getTopRated, discoverAnime, getAnimeById, ...) stay the
+// same, but their bodies would read from Supabase first and only fall
+// back to Jikan as an on-demand importer for anime Supabase doesn't have
+// yet. No code elsewhere needs to change for that swap. See ROADMAP.md
+// "Sprint 4+" for the planned repository split.
+// ---------------------------------------------------------------------
+
 // Canonical anime model used by lists/cards (Home, catalog pages, search,
 // favorites). Kept lean on purpose — components never see the raw Jikan
-// payload.
+// payload. `poster`/`posterSmall` are exposed separately so components can
+// build a real `srcset` instead of upscaling a single small image.
 function mapAnime(raw) {
+  const posterLarge = raw.images?.jpg?.large_image_url || raw.images?.jpg?.image_url || null
+  const posterSmall = raw.images?.jpg?.image_url || posterLarge
+
   return {
     id: raw.mal_id,
     title: raw.title,
-    poster: raw.images?.jpg?.large_image_url || raw.images?.jpg?.image_url || null,
-    backdrop: raw.images?.jpg?.large_image_url || null,
+    poster: posterLarge,
+    posterSmall,
+    backdrop: posterLarge,
     score: typeof raw.score === 'number' ? raw.score : null,
     year: raw.year || raw.aired?.prop?.from?.year || null,
     type: raw.type || null,
@@ -43,11 +61,13 @@ function mapAnimeDetail(raw) {
 // only return id/title/image per entry — never fabricate the missing
 // score/genres/year, just leave them null/empty like the rest of the app.
 function mapSparseAnime(entry) {
+  const posterLarge = entry.images?.jpg?.large_image_url || entry.images?.jpg?.image_url || null
   return {
     id: entry.mal_id,
     title: entry.title,
-    poster: entry.images?.jpg?.large_image_url || entry.images?.jpg?.image_url || null,
-    backdrop: entry.images?.jpg?.large_image_url || null,
+    poster: posterLarge,
+    posterSmall: entry.images?.jpg?.image_url || posterLarge,
+    backdrop: posterLarge,
     score: null,
     year: null,
     type: null,
@@ -152,7 +172,7 @@ export async function getAnimeByGenre(genreId, { page = 1, limit = 12 } = {}, si
 // name search actually needs. Explorar (no query) supplies its own default
 // order; Buscar only forwards one if the user explicitly picked it.
 export async function discoverAnime(filters = {}, signal) {
-  const { query, genre, type, orderBy, sort, year, page = 1, limit = 20 } = filters
+  const { query, genre, type, status, minScore, orderBy, sort, year, page = 1, limit = 20 } = filters
 
   const params = { page, limit }
   if (orderBy) params.order_by = orderBy
@@ -160,6 +180,8 @@ export async function discoverAnime(filters = {}, signal) {
   if (query) params.q = query.trim()
   if (genre) params.genres = genre
   if (type) params.type = type
+  if (status) params.status = status
+  if (minScore) params.min_score = minScore
   if (year) {
     params.start_date = `${year}-01-01`
     params.end_date = `${year}-12-31`
@@ -170,6 +192,15 @@ export async function discoverAnime(filters = {}, signal) {
 
 export async function searchAnime(query, filters = {}, signal) {
   return discoverAnime({ ...filters, query }, signal)
+}
+
+// Lightweight, unpaginated version of discoverAnime used by the Navbar's
+// instant-results dropdown — same endpoint/relevance ordering, just capped
+// small so the preview stays snappy.
+export async function quickSearchAnime(query, signal) {
+  if (!query.trim()) return []
+  const { data } = await discoverAnime({ query, limit: 5 }, signal)
+  return data
 }
 
 export async function getAnimeById(id, signal) {
@@ -194,6 +225,24 @@ export async function getAnimeCharacters(id, signal) {
         voiceActor: voiceActor?.person?.name || null,
       }
     })
+}
+
+// Real episode list (number/title/air date) — Jikan doesn't host video, so
+// this is metadata only, not a player. Still real, useful information (as
+// MAL/AniList themselves show), unlike a placeholder list with nothing behind it.
+export async function getAnimeEpisodes(id, { page = 1, limit = 12 } = {}, signal) {
+  const response = await jikan.get(`/anime/${id}/episodes`, { params: { page, limit }, signal })
+  return {
+    data: response.data.data.map((ep) => ({
+      id: ep.mal_id,
+      number: ep.mal_id,
+      title: ep.title || ep.title_romanji || `Episodio ${ep.mal_id}`,
+      aired: ep.aired || null,
+      score: typeof ep.score === 'number' ? ep.score : null,
+      filler: Boolean(ep.filler),
+    })),
+    pagination: mapPagination(response.data.pagination),
+  }
 }
 
 // Per-anime recommendations, shown as a carousel reusing AnimeCard/MovieRow.
@@ -230,4 +279,37 @@ export async function getFeaturedAnime(signal) {
   const { data } = await getTopRated({ limit: 20 }, signal)
   if (!data.length) return null
   return data[Math.floor(Math.random() * data.length)]
+}
+
+// Several real, distinct top-rated picks for the Hero carousel — shuffled
+// client-side so the same handful of titles don't always land in the same
+// order, still 100% real data (no fabricated "featured" flag anywhere).
+export async function getFeaturedSlides({ count = 6 } = {}, signal) {
+  const { data } = await getTopRated({ limit: 20 }, signal)
+  const shuffled = [...data].sort(() => Math.random() - 0.5)
+  return shuffled.slice(0, count)
+}
+
+// Búsqueda global de personajes — usada por el selector de avatar "elegir
+// un personaje de anime" (ver AvatarPicker.jsx). A diferencia de
+// getAnimeCharacters (personajes DE un anime), este endpoint (/characters)
+// no devuelve a qué anime pertenece cada personaje en la respuesta de
+// lista — por eso el grid de resultados solo muestra imagen + nombre; el
+// anime real se resuelve aparte (getCharacterAnime) solo para el personaje
+// que el usuario efectivamente selecciona, no para los 12 de golpe.
+export async function searchCharacters(query, signal) {
+  if (!query.trim()) return []
+  const response = await jikan.get('/characters', { params: { q: query.trim(), limit: 12 }, signal })
+  return response.data.data.map((character) => ({
+    id: character.mal_id,
+    name: character.name,
+    image: character.images?.jpg?.image_url || null,
+  }))
+}
+
+// Solo se llama al confirmar un personaje elegido en AvatarPicker — para
+// mostrar "Naruto Uzumaki — Naruto" antes de guardar, no en el grid.
+export async function getCharacterAnime(id, signal) {
+  const response = await jikan.get(`/characters/${id}`, { signal })
+  return response.data.data.anime?.[0]?.anime?.title || null
 }

@@ -24,7 +24,7 @@ function MovieGrid({
         </motion.div>
       ) : !movies?.length ? (
         <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-          <EmptyState title="Sin resultados" description={emptyMessage} />
+          <EmptyState title="Sin resultados" description={emptyMessage} onRetry={onRetry} />
         </motion.div>
       ) : (
         <motion.div

@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
-import { Star, Heart, ArrowLeft, Play, Share2, Clapperboard } from 'lucide-react'
+import { useParams, Link, useNavigate } from 'react-router-dom'
+import { Star, Heart, Bookmark, ArrowLeft, Play, Share2, Clapperboard } from 'lucide-react'
 import Container from '@/components/ui/Container'
 import Button from '@/components/ui/Button'
 import Skeleton from '@/components/ui/Skeleton'
@@ -14,16 +14,22 @@ import useFetch from '@/hooks/useFetch'
 import {
   getAnimeById,
   getAnimeCharacters,
+  getAnimeEpisodes,
   getAnimeRecommendations,
   getAnimeRelations,
   getAnimePictures,
 } from '@/services/animeService'
 import { useFavorites } from '@/context/FavoritesContext'
+import { useWatchLater } from '@/context/WatchLaterContext'
+import { useAuth } from '@/hooks/useAuth'
 import { ROUTES, RELATION_LABELS, animeDetailPath } from '@/constants'
 
 function AnimeDetail() {
   const { id } = useParams()
+  const { isAuthenticated } = useAuth()
   const { isFavorite, toggleFavorite } = useFavorites()
+  const { isInWatchLater, toggleWatchLater } = useWatchLater()
+  const navigate = useNavigate()
   const [shared, setShared] = useState(false)
 
   const {
@@ -47,6 +53,9 @@ function AnimeDetail() {
   const pictures = useFetch((signal) => getAnimePictures(id, signal), [id], {
     cacheKey: `anime:${id}:pictures`,
   })
+  const episodes = useFetch((signal) => getAnimeEpisodes(id, { limit: 12 }, signal), [id], {
+    cacheKey: `anime:${id}:episodes`,
+  })
 
   if (loading) {
     return (
@@ -67,10 +76,19 @@ function AnimeDetail() {
   if (!anime) return null
 
   const favorite = isFavorite(anime.id)
+  const inWatchLater = isInWatchLater(anime.id)
   const tags = [...anime.genres, ...anime.themes, ...anime.demographics]
 
   const handleWatchNow = () => {
     document.getElementById('trailer')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  const requireAuth = (action) => {
+    if (!isAuthenticated) {
+      navigate(ROUTES.LOGIN, { state: { from: { pathname: animeDetailPath(anime.id) } } })
+      return
+    }
+    action()
   }
 
   const handleShare = async () => {
@@ -94,9 +112,14 @@ function AnimeDetail() {
 
   return (
     <>
-      {/* Banner grande */}
+      {/* Banner grande — fondo desenfocado del póster (Jikan no expone un
+          banner panorámico distinto), nunca el póster estirado sin más. */}
       <section className="relative h-[38vh] min-h-[240px] w-full overflow-hidden sm:h-[46vh]">
-        <img src={anime.backdrop || anime.poster} alt="" className="h-full w-full object-cover" />
+        <img
+          src={anime.backdrop || anime.poster}
+          alt=""
+          className="h-full w-full scale-110 object-cover blur-2xl opacity-70"
+        />
         <div className="absolute inset-0 bg-gradient-to-t from-background via-background/70 to-background/20" />
       </section>
 
@@ -164,11 +187,20 @@ function AnimeDetail() {
           <Button
             variant="secondary"
             size="lg"
-            onClick={() => toggleFavorite(anime)}
+            onClick={() => requireAuth(() => toggleFavorite(anime))}
             aria-pressed={favorite}
           >
             <Heart size={18} fill={favorite ? 'currentColor' : 'none'} />
-            {favorite ? 'En Mi Lista' : 'Agregar a Mi Lista'}
+            {favorite ? 'En Favoritos' : 'Favorito'}
+          </Button>
+          <Button
+            variant="secondary"
+            size="lg"
+            onClick={() => requireAuth(() => toggleWatchLater(anime))}
+            aria-pressed={inWatchLater}
+          >
+            <Bookmark size={18} fill={inWatchLater ? 'currentColor' : 'none'} />
+            {inWatchLater ? 'En Mi Lista' : 'Agregar a Mi Lista'}
           </Button>
           <Button variant="ghost" size="lg" onClick={handleShare}>
             <Share2 size={18} />
@@ -214,6 +246,7 @@ function AnimeDetail() {
               compact
               title="Sin personajes registrados"
               description="Todavía no tenemos el elenco principal de este anime."
+              onRetry={characters.refetch}
             />
           ) : (
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -246,6 +279,59 @@ function AnimeDetail() {
           )}
         </section>
 
+        {/* Episodios — metadatos reales (número/título/fecha), no un
+            reproductor: Jikan no aloja video, pero esta información sí es
+            real y útil (MAL/AniList la muestran igual). */}
+        <section className="mt-12">
+          <h2 className="mb-4 font-display text-xl font-bold text-text sm:text-2xl">Episodios</h2>
+          {episodes.loading ? (
+            <div className="space-y-2">
+              {Array.from({ length: 5 }).map((_, index) => (
+                <Skeleton key={index} className="h-14 w-full" />
+              ))}
+            </div>
+          ) : episodes.error ? (
+            <ErrorState compact onRetry={episodes.refetch} />
+          ) : !episodes.data?.length ? (
+            <EmptyState
+              compact
+              title="Sin episodios listados"
+              description="Todavía no tenemos el listado de episodios de este anime."
+              onRetry={episodes.refetch}
+            />
+          ) : (
+            <div className="space-y-2">
+              {episodes.data.map((episode) => (
+                <div
+                  key={episode.id}
+                  className="flex items-center justify-between gap-4 rounded-xl border border-border bg-card px-4 py-3"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-text">
+                      {episode.number}. {episode.title}
+                    </p>
+                    {episode.aired && (
+                      <p className="text-xs text-text-secondary">
+                        {new Date(episode.aired).toLocaleDateString('es', {
+                          year: 'numeric',
+                          month: 'short',
+                          day: 'numeric',
+                        })}
+                      </p>
+                    )}
+                  </div>
+                  {typeof episode.score === 'number' && (
+                    <span className="flex shrink-0 items-center gap-1 text-xs text-text-secondary">
+                      <Star size={12} className="text-primary" fill="currentColor" />
+                      {episode.score.toFixed(1)}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
         {/* Relacionados */}
         <section className="mt-12">
           <h2 className="mb-4 font-display text-xl font-bold text-text sm:text-2xl">Relacionados</h2>
@@ -261,6 +347,7 @@ function AnimeDetail() {
               compact
               title="Sin animes relacionados"
               description="Este anime no tiene precuelas, secuelas u otras conexiones registradas."
+              onRetry={relations.refetch}
             />
           ) : (
             <div className="space-y-4">
@@ -274,7 +361,7 @@ function AnimeDetail() {
                       <Link
                         key={item.mal_id}
                         to={animeDetailPath(item.mal_id)}
-                        className="rounded-full border border-border bg-surface-hover px-4 py-2 text-sm text-text-secondary transition-colors hover:border-primary hover:text-text"
+                        className="rounded-full border border-border bg-card px-4 py-2 text-sm text-text-secondary transition-colors hover:border-primary hover:text-text"
                       >
                         {item.name}
                       </Link>
@@ -302,6 +389,7 @@ function AnimeDetail() {
               compact
               title="Sin imágenes disponibles"
               description="Todavía no tenemos imágenes adicionales para este anime."
+              onRetry={pictures.refetch}
             />
           ) : (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">

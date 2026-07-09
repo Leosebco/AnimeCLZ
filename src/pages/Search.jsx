@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Search as SearchIcon } from 'lucide-react'
 import Container from '@/components/ui/Container'
 import Filters from '@/components/catalog/Filters'
@@ -11,7 +12,8 @@ import { searchAnime } from '@/services/animeService'
 import { ORDER_OPTIONS } from '@/constants'
 
 function Search() {
-  const [query, setQuery] = useState('')
+  const [searchParams] = useSearchParams()
+  const [query, setQuery] = useState(searchParams.get('q') || '')
   const [filters, setFilters] = useState({})
   const [page, setPage] = useState(1)
   const debouncedQuery = useDebounce(query, 450)
@@ -32,6 +34,8 @@ function Search() {
             {
               genre: filters.genre,
               type: filters.type,
+              status: filters.status,
+              minScore: filters.minScore,
               year: filters.year,
               orderBy: order?.orderBy,
               sort: order?.sort,
@@ -41,7 +45,23 @@ function Search() {
             signal,
           )
         : Promise.resolve({ data: [], pagination: { hasNextPage: false } }),
-    [trimmedQuery, filters.genre, filters.type, filters.year, filters.order, page],
+    [
+      trimmedQuery,
+      filters.genre,
+      filters.type,
+      filters.status,
+      filters.minScore,
+      filters.year,
+      filters.order,
+      page,
+    ],
+    {
+      // Repeat searches for the same term/filters reuse the cached result
+      // for a few minutes instead of hitting Jikan's fragile search backend
+      // again — a real, meaningful reliability win, not just a speed one.
+      cacheKey: hasQuery ? `search:${trimmedQuery}:${JSON.stringify(filters)}:${page}` : undefined,
+      cacheTTL: 3 * 60 * 1000,
+    },
   )
 
   const handleQueryChange = (event) => {
@@ -58,10 +78,10 @@ function Search() {
     <Container className="pt-28 pb-16">
       <h1 className="font-display text-2xl font-bold text-text sm:text-3xl">Buscar</h1>
 
-      <div className="relative mt-6 max-w-xl">
+      <div className="relative mt-6 max-w-2xl origin-left transition-transform duration-200 focus-within:scale-[1.01]">
         <SearchIcon
-          className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-text-secondary"
-          size={18}
+          className="pointer-events-none absolute left-5 top-1/2 -translate-y-1/2 text-text-secondary"
+          size={20}
         />
         <input
           type="search"
@@ -69,7 +89,7 @@ function Search() {
           onChange={handleQueryChange}
           placeholder="Busca un anime por título..."
           aria-label="Buscar anime"
-          className="w-full rounded-full border border-border bg-surface-hover py-3 pl-11 pr-4 text-sm text-text placeholder:text-text-secondary transition-colors focus-visible:outline-2 focus-visible:outline-primary"
+          className="w-full rounded-full border border-border bg-card py-4 pl-13 pr-5 text-base text-text placeholder:text-text-secondary transition-colors duration-200 focus-visible:border-primary focus-visible:outline-2 focus-visible:outline-primary"
         />
       </div>
 

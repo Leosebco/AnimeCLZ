@@ -32,7 +32,7 @@ function Footer() {
                   target="_blank"
                   rel="noreferrer"
                   aria-label={label}
-                  className="p-2 rounded-full text-text-secondary hover:text-text hover:bg-surface-hover transition-colors"
+                  className="p-2 rounded-full text-text-secondary hover:text-text hover:bg-hover transition-colors"
                 >
                   <Icon size={18} />
                 </a>

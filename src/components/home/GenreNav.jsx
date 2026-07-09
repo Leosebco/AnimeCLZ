@@ -12,7 +12,7 @@ function GenreNav() {
             <Link
               key={genre.id}
               to={`${ROUTES.EXPLORE}?genre=${genre.id}`}
-              className="rounded-full border border-border bg-surface-hover px-4 py-2 text-sm text-text-secondary transition-colors hover:border-primary hover:text-text"
+              className="rounded-full border border-border bg-card px-4 py-2 text-sm text-text-secondary transition-colors hover:border-primary hover:text-text"
             >
               {genre.label}
             </Link>
