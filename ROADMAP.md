@@ -419,6 +419,81 @@ autenticación, ni el Panel de Administración existentes se rompieron.
 
 ---
 
+## v1.3 — Landing Page, navegación, arquitectura de proveedores y SUPER_ADMIN (completado, con exclusiones documentadas)
+
+**Landing Page.** La antigua página institucional (`/acerca`) se convirtió en la página principal
+pública (`pages/Landing.jsx`, ruta `/`) — Home (el catálogo) se movió a `/inicio`. Landing vive fuera del
+`Layout` público (header propio + `layout/Footer.jsx` reutilizado), con: Hero + CTA "Explorar Anime"
+(a `/iniciar-sesion` sin sesión, a `/inicio` con sesión), Qué es AnimeCLZ, Características (nueva,
+6 tarjetas reales), Estadísticas del catálogo (nueva — número real de animes vía `AnimeProvider`,
+número real de géneros, no inventados), Objetivos, Tecnologías, Arquitectura, Capturas del sistema
+(nueva — estructura lista, sin capturas reales todavía: se agregan en `public/screenshots/`), Sobre el
+desarrollador, FAQ, Contacto, Privacidad y Términos (estas últimas seis, heredadas de /acerca, se
+mantuvieron para no perder contenido ni romper los anclajes del Footer). `/acerca` ahora es un simple
+redirect a `/` que preserva el hash — no se borró el archivo (`pages/About.jsx`), solo se vació de
+contenido real.
+
+**Logo condicional.** El logo del Navbar (no el de la Landing, que siempre va a `/`) apunta a `/` sin
+sesión y a `/inicio` con sesión. Mismo criterio aplicado a los redirects tras cerrar sesión
+(`Navbar.jsx`/`AccountMenu.jsx`/`Profile.jsx` ahora navegan a la Landing, no al catálogo).
+
+**Navbar.** Favoritos, Mi Lista e Historial se movieron del menú de cuenta a `NAV_LINKS` (el menú
+horizontal principal), junto a Inicio/Explorar/Temporada. "Top" quedó fuera de esa lista a propósito —no
+estaba en la lista pedida explícitamente— pero su ruta (`/top`) sigue existiendo y funcionando, solo sin
+enlace en el menú principal.
+
+**Arquitectura de proveedores.** Nueva capa `src/providers/`: `AnimeProvider.js` es el único punto de
+entrada de datos de anime para toda la app — ninguna página debe importar un proveedor concreto ni
+`services/animeService.js` directamente (los 10 archivos que sí lo hacían se migraron a importar de
+`AnimeProvider`). `providers/jikan/JikanProvider.js` es la implementación activa (re-exporta
+`animeService.js`, sin mover/reescribir esa lógica ya probada). `providers/anilist/AniListProvider.js` y
+`providers/tmdb/TMDBProvider.js` son *stubs* — mismo contrato de ~20 métodos, cada uno lanza un error
+claro si se invoca, en vez de fingir funcionar.
+
+**Sinopsis en español.** Nueva tabla `anime_synopsis_es` (migración 0012, lectura pública incluso sin
+sesión) + `overlaySpanishSynopsis()` en `animeService.js`, aplicado en `fetchList`/`getAnimeById`: si
+existe una traducción curada para un `mal_id`, se muestra en vez de la original; si no, se muestra la de
+Jikan sin traducir en tiempo real. La tabla nace vacía — se puebla desde un futuro importador (no
+implementado), así que hoy esto es, en la práctica, casi siempre un no-op.
+
+**SUPER_ADMIN + Panel de Gestión de Usuarios.** Nuevo rol por encima de `admin` (migración 0013). Único
+que puede cambiar el rol de otra cuenta (`admin`/`editor`/`moderador`/`usuario` — `SUPER_ADMIN` no se
+asigna desde la UI) desde `pages/admin/Users.jsx`, ahora con una columna de rol editable cuando quien
+mira es `super_admin`; bloqueado explícitamente cambiar el propio rol. `leoseb.co@gmail.com` se elevó
+automáticamente a `super_admin` (ya existía la cuenta; si no hubiera existido, se habría creado así
+desde el registro).
+
+**Bug real encontrado y corregido durante esta pasada:** los triggers de protección de rol
+(`protect_profile_role`/`protect_profile_account_rol`, desde v0.10/v1.1) usaban `auth.uid()` para saber
+"¿quién pide este cambio?" — pero `auth.uid()` es `NULL` fuera de una sesión con JWT (una migración vía
+`supabase db push`, o el SQL Editor), y `not exists (... where account_id = NULL ...)` es siempre
+verdadero, así que esos triggers habrían bloqueado incluso la propia elevación de
+`leoseb.co@gmail.com` a `super_admin` en esta misma migración. Verificado empíricamente
+(`select auth.uid()` en ese contexto) antes de escribir la migración 0013, que corrige ambos triggers
+para permitir el cambio cuando `auth.uid() is null` (un operador de confianza actuando fuera del
+cliente) y, de paso, agrega el bloqueo explícito de "no puedes cambiar tu propio rol" que faltaba.
+
+**No implementado (pedido explícito o fuera de alcance):**
+- Implementación real de AniList/TMDB — quedan como *stubs*, tal como se pidió ("preparar la
+  arquitectura", no proveedores funcionando).
+- Importador/traductor automático de sinopsis desde Jikan — la tabla y el overlay están listos, el
+  pipeline que la puebla no.
+- Capturas reales del sistema en la Landing — estructura lista, sin imágenes todavía.
+- Edición de rol de un perfil individual (solo `profiles_account`) desde la UI — el Panel de Gestión de
+  Usuarios edita el rol de la CUENTA, que se propaga al perfil predeterminado vía el trigger ya
+  existente (`sync_default_profile_rol`); no se construyó una segunda UI para perfiles secundarios de una
+  misma cuenta.
+
+**Criterio de aceptación:** `npm run build` y `npm run lint` limpios; `/` sirve la Landing sin sesión y
+con sesión, con el CTA llevando al destino correcto en cada caso; `/inicio` sirve el catálogo igual que
+antes; Favoritos/Mi Lista/Historial visibles en el menú principal; ninguna página quedó importando de
+`animeService.js` directamente salvo `JikanProvider.js`; sinopsis en español no rompe ningún fetch
+existente (tabla vacía, no-op observable); `leoseb.co@gmail.com` con rol `super_admin` verificado por
+SQL directo; ninguna funcionalidad existente (autenticación, Panel de Administración, Favoritos/Mi
+Lista/Historial) se rompió.
+
+---
+
 ## Sprint 4 — Firebase y cuentas de usuario (superado por v0.9 — se hizo con Supabase)
 
 - ~~**Firebase**~~ — se implementó con **Supabase** en su lugar (ver v0.9 arriba); mismo objetivo (auth +

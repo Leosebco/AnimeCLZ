@@ -3,7 +3,7 @@ import Container from '@/components/ui/Container'
 import MovieGrid from '@/components/catalog/MovieGrid'
 import Pagination from '@/components/catalog/Pagination'
 import useFetch from '@/hooks/useFetch'
-import { getTopRated } from '@/services/animeService'
+import { getTopRated } from '@/providers/AnimeProvider'
 
 function Top() {
   const [page, setPage] = useState(1)

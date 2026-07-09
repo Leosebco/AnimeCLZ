@@ -5,7 +5,7 @@ import Filters from '@/components/catalog/Filters'
 import MovieGrid from '@/components/catalog/MovieGrid'
 import Pagination from '@/components/catalog/Pagination'
 import useFetch from '@/hooks/useFetch'
-import { discoverAnime } from '@/services/animeService'
+import { discoverAnime } from '@/providers/AnimeProvider'
 import { ORDER_OPTIONS } from '@/constants'
 
 function Explore() {

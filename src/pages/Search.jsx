@@ -8,7 +8,7 @@ import Pagination from '@/components/catalog/Pagination'
 import EmptyState from '@/components/ui/EmptyState'
 import useFetch from '@/hooks/useFetch'
 import useDebounce from '@/hooks/useDebounce'
-import { searchAnime } from '@/services/animeService'
+import { searchAnime } from '@/providers/AnimeProvider'
 import { ORDER_OPTIONS } from '@/constants'
 
 function Search() {

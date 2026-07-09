@@ -20,8 +20,11 @@ import { cn } from '@/utils/cn'
 
 // Cada item declara qué roles pueden verlo — la mayoría del contenido es
 // gestionable por admin/editor/moderador; Usuarios y Configuración quedan
-// reservados a admin. Los íconos viven aquí (no en constants/index.js) para
-// no meter JSX/lucide-react en un archivo de datos planos.
+// reservados a admin/super_admin (el cambio de rol dentro de Usuarios, a
+// su vez, solo lo puede EJECUTAR super_admin — ver ROLE_MANAGEMENT_ROLES
+// en constants/index.js y pages/admin/Users.jsx). Los íconos viven aquí
+// (no en constants/index.js) para no meter JSX/lucide-react en un
+// archivo de datos planos.
 const ADMIN_NAV_ITEMS = [
   { label: 'Dashboard', path: ROUTES.ADMIN_DASHBOARD, icon: LayoutDashboard, end: true },
   { label: 'Animes', path: ROUTES.ADMIN_ANIMES, icon: Clapperboard },
@@ -34,14 +37,14 @@ const ADMIN_NAV_ITEMS = [
     label: 'Usuarios',
     path: ROUTES.ADMIN_USERS,
     icon: UserCog,
-    roles: [ROLES.ADMIN],
+    roles: [ROLES.SUPER_ADMIN, ROLES.ADMIN],
   },
   { label: 'Comentarios', path: ROUTES.ADMIN_COMMENTS, icon: MessageSquare },
   {
     label: 'Configuración',
     path: ROUTES.ADMIN_SETTINGS,
     icon: Settings,
-    roles: [ROLES.ADMIN],
+    roles: [ROLES.SUPER_ADMIN, ROLES.ADMIN],
   },
 ]
 

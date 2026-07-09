@@ -18,7 +18,7 @@ import {
   getAnimeRecommendations,
   getAnimeRelations,
   getAnimePictures,
-} from '@/services/animeService'
+} from '@/providers/AnimeProvider'
 import { useFavorites } from '@/context/FavoritesContext'
 import { useWatchLater } from '@/context/WatchLaterContext'
 import { useAuth } from '@/hooks/useAuth'

@@ -20,7 +20,7 @@ const GROUPS = [
   {
     icon: Lock,
     title: 'Privacidad',
-    description: 'Quién puede ver tus perfiles, favoritos y actividad. Ver también la Política de Privacidad en /acerca.',
+    description: 'Quién puede ver tus perfiles, favoritos y actividad. Ver también la Política de Privacidad en la página principal.',
   },
 ]
 

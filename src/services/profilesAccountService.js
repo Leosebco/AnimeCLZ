@@ -35,7 +35,14 @@ export async function listProfiles(accountId) {
     .eq('account_id', accountId)
     .eq('activo', true)
     .order('fecha_creacion', { ascending: true })
-  if (error) throw new Error(GENERIC_ERROR)
+  if (error) {
+    // El mensaje al usuario es genérico a propósito (mismo criterio que el
+    // resto de la app), pero el error real de Supabase (code/message/
+    // details/hint de PostgREST) nunca debe perderse — es la única forma
+    // de diagnosticar RLS/grants faltantes en vez de adivinar.
+    console.error('[profilesAccountService.listProfiles] Supabase error:', error)
+    throw new Error(GENERIC_ERROR)
+  }
   return data.map(fromRow)
 }
 

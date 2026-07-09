@@ -6,6 +6,7 @@ import {
   listProfiles,
   updateProfile as updateProfileRequest,
 } from '@/services/profilesAccountService'
+import { AVATAR_TYPES, PROFILE_COLORS } from '@/constants'
 
 function storageKey(accountId) {
   return `animeclz:activeProfile:${accountId}`
@@ -25,7 +26,7 @@ export const ProfileContext = createContext(null)
  * Perfil" explícitamente.
  */
 export function ProfileProvider({ children }) {
-  const { user } = useAuth()
+  const { user, profile: accountProfile } = useAuth()
   const accountId = user?.id ?? null
 
   const [profiles, setProfiles] = useState([])
@@ -36,20 +37,43 @@ export function ProfileProvider({ children }) {
   const [profilesFetchedFor, setProfilesFetchedFor] = useState(null)
   const [activeProfileId, setActiveProfileId] = useState(null)
 
-  const fetchProfiles = useCallback(() => {
+  const fetchProfiles = useCallback(async () => {
     if (!accountId) return
-    listProfiles(accountId)
-      .then((data) => {
+    try {
+      const data = await listProfiles(accountId)
+      // Instrumentación temporal pedida para diagnosticar el selector de
+      // perfiles — dejar mientras se sigue verificando en producción.
+      console.log('[ProfileContext] listProfiles data:', data)
+
+      if (data.length === 0) {
+        // 0 filas no es un error: la cuenta existe pero, por la razón que
+        // sea (el trigger de auto-creación no llegó a correr, un backfill
+        // incompleto, etc.), se quedó sin perfil. En vez de mostrar un
+        // selector vacío exigiendo "Crear Perfil" a mano, se crea el
+        // perfil principal automáticamente y se continúa.
+        const defaultName = accountProfile?.username || user?.email?.split('@')[0] || 'Mi Perfil'
+        const created = await createProfileRequest(accountId, {
+          nombre: defaultName,
+          avatar: null,
+          tipoAvatar: AVATAR_TYPES.INITIAL,
+          color: PROFILE_COLORS[0],
+        })
+        setProfiles([created])
+        setActiveProfileId(created.id)
+        localStorage.setItem(storageKey(accountId), created.id)
+      } else {
         setProfiles(data)
-        setProfilesError(null)
-        setProfilesFetchedFor(accountId)
-      })
-      .catch((err) => {
-        setProfiles([])
-        setProfilesError(err)
-        setProfilesFetchedFor(accountId)
-      })
-  }, [accountId])
+      }
+
+      setProfilesError(null)
+      setProfilesFetchedFor(accountId)
+    } catch (err) {
+      console.error('[ProfileContext] fetchProfiles error:', err)
+      setProfiles([])
+      setProfilesError(err)
+      setProfilesFetchedFor(accountId)
+    }
+  }, [accountId, accountProfile, user])
 
   useEffect(() => {
     if (!accountId) return

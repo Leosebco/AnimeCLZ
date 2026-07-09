@@ -18,7 +18,7 @@ function Navbar() {
   const handleMobileSignOut = async () => {
     setIsMenuOpen(false)
     await signOut()
-    navigate(ROUTES.HOME)
+    navigate(ROUTES.LANDING)
   }
 
   useEffect(() => {
@@ -38,7 +38,10 @@ function Navbar() {
       )}
     >
       <Container className="flex h-18 items-center justify-between py-3">
-        <Link to={ROUTES.HOME} className="flex items-center gap-2 font-display text-lg font-bold text-text">
+        <Link
+          to={isAuthenticated ? ROUTES.HOME : ROUTES.LANDING}
+          className="flex items-center gap-2 font-display text-lg font-bold text-text"
+        >
           <Clapperboard className="text-primary" size={22} aria-hidden />
           AnimeCLZ
         </Link>
@@ -118,20 +121,6 @@ function Navbar() {
                       className="rounded-full px-4 py-2.5 text-sm font-medium text-text-secondary hover:bg-hover hover:text-text"
                     >
                       Perfil
-                    </Link>
-                    <Link
-                      to={ROUTES.MY_LIST}
-                      onClick={() => setIsMenuOpen(false)}
-                      className="rounded-full px-4 py-2.5 text-sm font-medium text-text-secondary hover:bg-hover hover:text-text"
-                    >
-                      Mi Lista
-                    </Link>
-                    <Link
-                      to={ROUTES.FAVORITES}
-                      onClick={() => setIsMenuOpen(false)}
-                      className="rounded-full px-4 py-2.5 text-sm font-medium text-text-secondary hover:bg-hover hover:text-text"
-                    >
-                      Favoritos
                     </Link>
                     <button
                       type="button"

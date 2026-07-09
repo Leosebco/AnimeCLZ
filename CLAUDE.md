@@ -69,6 +69,9 @@ Estructura de carpetas a mantener (no aplanar ni reorganizar sin acuerdo explíc
   `ROUTES.*` desde `constants/`, nunca como string hardcodeado.
 - `services/` — única capa que habla con APIs externas (Jikan, ver sección API) y con Supabase (ver
   sección Autenticación); los componentes nunca llaman a `axios`/`jikan`/`supabase` directamente.
+- `providers/` (v1.3) — capa desacoplada de proveedores de catálogo, por encima de `services/`. Ver
+  sección API para el detalle; en corto: las páginas importan de `providers/AnimeProvider.js`, nunca de
+  `services/animeService.js` ni de un proveedor concreto directamente.
 - `hooks/` — `useFetch` es el hook de datos genérico (AbortController + caché + retry) que usa toda la
   app; `useDebounce` para inputs (buscador). No crear un hook de fetch nuevo por página: parametrizar
   `useFetch` con la función de servicio correspondiente.
@@ -93,11 +96,31 @@ familias, no hay mono) viven ahí; se reutilizan en vez de hardcodear valores.
 
 ## API
 
+**Arquitectura de proveedores (v1.3):** ninguna página/componente debe importar un proveedor concreto
+(Jikan, AniList, TMDB) ni `services/animeService.js` directamente — siempre importan desde
+`providers/AnimeProvider.js`, el único punto de entrada de datos de anime para toda la app.
+- `providers/jikan/JikanProvider.js` es la implementación activa hoy — re-exporta `services/
+  animeService.js` (la lógica real no se movió, para no arriesgar reescribir código ya probado).
+- `providers/anilist/AniListProvider.js` y `providers/tmdb/TMDBProvider.js` son **stubs sin
+  implementar** (arquitectura preparada) — cada método lanza un error claro si se llega a invocar (ver
+  `providers/stubProvider.js`). No lo son "por error"; no completar su implementación sin que se pida.
+- Cambiar el proveedor activo en el futuro es cambiar el único `export * from './jikan/JikanProvider'`
+  de `AnimeProvider.js` — ningún otro archivo debería necesitar tocarse.
+- Cualquier función nueva de catálogo se agrega en `animeService.js` (mismo lugar de siempre) y queda
+  re-exportada automáticamente a través de `JikanProvider.js` → `AnimeProvider.js`.
+
 Usar únicamente **Jikan API** (`src/api/jikan.js`, baseURL `https://api.jikan.moe/v4`) como fuente de
-datos. Nunca inventar información de animes (títulos, ratings, sinopsis, etc.) — todo dato mostrado debe
-venir de la respuesta real de la API. `animeService.js` mapea toda respuesta al modelo canónico único
-(`mapAnime`) y expone funciones que ya devuelven `{ data, pagination }` de forma consistente — no crear
-una función de servicio que devuelva una forma distinta.
+datos — hoy el único proveedor real detrás de `AnimeProvider`. Nunca inventar información de animes
+(títulos, ratings, sinopsis, etc.) — todo dato mostrado debe venir de la respuesta real de la API.
+`animeService.js` mapea toda respuesta al modelo canónico único (`mapAnime`) y expone funciones que ya
+devuelven `{ data, pagination }` de forma consistente — no crear una función de servicio que devuelva
+una forma distinta.
+
+**Sinopsis en español (v1.3):** `animeService.js` puede mostrar una sinopsis en español almacenada en
+Supabase (tabla `anime_synopsis_es`, migración 0012) en vez de la original de Jikan, vía
+`overlaySpanishSynopsis()` — aplicado en `fetchList`/`getAnimeById`. Nunca se traduce en tiempo real; la
+tabla se puebla desde un futuro importador (no implementado todavía), así que hoy esto es, en la
+práctica, casi siempre un no-op. No agregar una llamada de traducción en vivo aquí.
 
 Jikan es una API pública sin key, con límite de tasa y caídas 5xx intermitentes bajo carga (observado
 empíricamente, y confirmado independientemente con `curl` fuera de la app: el endpoint `/anime?q=` de
@@ -152,22 +175,36 @@ mi lista, historial) y el perfil del usuario.
   (Home, Explorar, etc.) — `/admin/*` vive fuera del `Layout` público, por eso `ProtectedRoute` repite
   ese chequeo en vez de depender solo de `Layout`.
 - **Roles — dos niveles, no confundirlos:**
-  - `profiles.role` (columna en la tabla de CUENTA, migración 0008): heredado histórico de v0.10, hoy
-    **no se usa para gating** — ver el punto siguiente. Sigue existiendo porque `pages/admin/Users.jsx`
-    lista cuentas por este campo (ese CRUD no se tocó en v1.1, tal como se pidió).
-  - `profiles_account.rol` (columna en la tabla de PERFIL, migración 0009): **es el que realmente
+  - `profiles.role` (columna en la tabla de CUENTA, migración 0008/0013): **es lo que el Panel de
+    Gestión de Usuarios edita** (`pages/admin/Users.jsx` → `adminService.updateUserRole`).
+  - `profiles_account.rol` (columna en la tabla de PERFIL, migración 0009/0013): **es el que realmente
     controla el acceso al Panel de Administración** — `ProtectedRoute` con `roles={STAFF_ROLES}` lee
-    `activeProfile.rol` (`useProfile()`), no `profile.role` de `useAuth()`. Ambos comparten los mismos
-    valores (`admin`/`editor`/`moderador`/`usuario`, `constants/index.js`: `ROLES`/`ROLE_LABELS`/
-    `STAFF_ROLES`).
-  - Ninguno de los dos se acepta como parámetro de escritura desde el cliente: `profileService.
-    updateProfile`/`profilesAccountService.createProfile`/`updateProfile` nunca mandan `role`/`rol`. Cada
-    tabla tiene su propio trigger de protección (`protect_profile_role` / `protect_profile_account_rol`)
-    que revierte cualquier intento de cambiarlo salvo que la cuenta ya tenga un perfil `admin` activo.
-  - La primera cuenta admin se eleva a mano desde el SQL Editor de Supabase (ver comentario al final de
-    la migración 0008) — un trigger (`sync_default_profile_rol`, migración 0009) propaga ese cambio
-    automáticamente al perfil más antiguo de la cuenta (el que se autogenera al registrarse), para que el
-    Panel de Administración aparezca sin un segundo paso manual.
+    `activeProfile.rol` (`useProfile()`), no `profile.role` de `useAuth()`.
+  - Un trigger (`sync_default_profile_rol`, migración 0009) propaga automáticamente cualquier cambio en
+    `profiles.role` al perfil predeterminado de esa cuenta — por eso editar el rol de una CUENTA desde
+    el Panel de Gestión de Usuarios sí termina afectando el acceso real, sin tener que escribir en
+    `profiles_account` por separado.
+  - Valores compartidos: `admin`/`editor`/`moderador`/`usuario`, más `super_admin` desde v1.3
+    (`constants/index.js`: `ROLES`/`ROLE_LABELS`/`STAFF_ROLES`/`ROLE_MANAGEMENT_ROLES`/`ASSIGNABLE_ROLES`).
+  - Ninguno de los dos se acepta como parámetro de escritura libre desde el cliente en los servicios de
+    perfil (`profileService.updateProfile`/`profilesAccountService.createProfile`/`updateProfile` nunca
+    mandan `role`/`rol`) — el único camino de escritura de rol es `adminService.updateUserRole`, y solo
+    lo puede ejecutar quien ya sea `super_admin`. Cada tabla tiene su propio trigger de protección
+    (`protect_profile_role` / `protect_profile_account_rol`, reescritos en la migración 0013) que
+    revierte/bloquea cualquier intento de cambiarlo si quien llama no es `super_admin`, y que además
+    bloquea explícitamente cambiar el **propio** rol (para no perder acceso por accidente).
+  - **Importante para quien escriba una migración futura que toque `role`/`rol`:** `auth.uid()` es
+    `NULL` fuera de una sesión con JWT (migraciones vía `supabase db push`, SQL Editor) — verificado
+    empíricamente. Los triggers de protección de rol solo aplican sus chequeos cuando
+    `auth.uid() is not null`; una migración/SQL directo los atraviesa libremente (es un operador de
+    confianza actuando fuera del cliente). Antes de la migración 0013 esto NO estaba así — un bug real
+    que habría bloqueado incluso la propia elevación de la primera cuenta admin si se hubiera necesitado
+    volver a ejecutar ese UPDATE.
+  - **SUPER_ADMIN (v1.3):** único rol que puede cambiar el rol de otra cuenta (Panel de Gestión de
+    Usuarios, dentro de `/admin/usuarios`) — ni siquiera `admin` puede. La cuenta `leoseb.co@gmail.com`
+    se eleva automáticamente a `super_admin`: si ya existía, la migración 0013 la elevó directamente; si
+    se registra en el futuro, `handle_new_user()` (reescrita en 0013) la crea así desde el principio. No
+    hay una segunda cuenta hardcodeada en ningún otro lugar — ese es el único caso especial.
 - **Perfiles múltiples por cuenta (v1.1, estilo Netflix):** una cuenta (login con Google/correo) puede
   tener varios perfiles (`profiles_account`, migración 0009) — no varias cuentas. Cada perfil tiene su
   propio nombre, avatar, color y rol. `context/ProfileContext.jsx` + `hooks/useProfile.js` son la fuente
@@ -232,14 +269,17 @@ mi lista, historial) y el perfil del usuario.
 
 ## Notas técnicas actuales
 
-- Rutas activas: `/`, `/explorar`, `/temporada`, `/top`, `/buscar`, `/anime/:id`, `/acerca` (públicas);
-  `/mi-lista`, `/favoritos`, `/historial`, `/perfil` (perfil activo, ya no cuenta — ver Autenticación),
-  `/configuracion` (protegidas, requieren sesión + perfil elegido); `/perfiles` (selector de perfiles,
-  protegida solo por sesión — ver `requireProfile={false}`); `/iniciar-sesion`, `/crear-cuenta`,
-  `/recuperar-contrasena`, `/restablecer-contrasena` (fuera del `Layout`, sin Navbar/Footer); `/admin` y
-  `/admin/{animes,temporadas,episodios,personajes,estudios,noticias,usuarios,comentarios,configuracion}`
-  (protegidas por el rol del perfil activo, ver sección Autenticación). `src/data/movies.js` fue
-  eliminado — no reintroducir datos mock.
+- Rutas activas: `/` (Landing pública, v1.3, fuera del `Layout`, con su propio header/Footer — ver Notas
+  v1.3), `/inicio` (el catálogo — Home.jsx, dentro del `Layout`; **ya no vive en `/`**), `/explorar`,
+  `/temporada`, `/top` (sigue existiendo y funcionando, pero ya no está en `NAV_LINKS` desde v1.3),
+  `/buscar`, `/anime/:id` (públicas); `/acerca` ahora es solo un redirect a `/` (preserva el hash, ver
+  About.jsx); `/mi-lista`, `/favoritos`, `/historial`, `/perfil` (perfil activo, ya no cuenta — ver
+  Autenticación), `/configuracion` (protegidas, requieren sesión + perfil elegido); `/perfiles` (selector
+  de perfiles, protegida solo por sesión — ver `requireProfile={false}`); `/iniciar-sesion`,
+  `/crear-cuenta`, `/recuperar-contrasena`, `/restablecer-contrasena` (fuera del `Layout`, sin
+  Navbar/Footer); `/admin` y `/admin/{animes,temporadas,episodios,personajes,estudios,noticias,usuarios,
+  comentarios,configuracion}` (protegidas por el rol del perfil activo, ver sección Autenticación).
+  `src/data/movies.js` fue eliminado — no reintroducir datos mock.
 - `AnimeDetail.jsx` es la ficha completa (Sprint 3): banner, info extendida (ranking, popularidad,
   estudios, productores, licenciantes, clasificación, temas, demografía), Personajes principales,
   Trailer, Episodios, Relacionados y Galería, más un carrusel de Recomendados (`MovieRow`/`AnimeCard`).
@@ -288,14 +328,25 @@ mi lista, historial) y el perfil del usuario.
   listado global; Estudios y Noticias necesitarían una tabla propia) — se dejaron con la tabla armada y
   un `EmptyState` explicando por qué, no con contenido inventado. No agregar botones de crear/editar/
   eliminar reales en estas vistas sin que se pida explícitamente (ver ROADMAP.md).
-- **Perfiles múltiples + página institucional (v1.1):** ver sección Autenticación para el detalle de
-  perfiles/roles/avatares. `AccountMenu.jsx` (Navbar) ahora muestra avatar + nombre + rol del perfil
-  activo directamente en el botón (antes solo un círculo con iniciales de la cuenta) y su menú incluye
-  Mi Perfil/Cambiar Perfil/Mi Lista/Favoritos/Historial/Configuración/Panel de Administración (solo
-  staff)/Cerrar sesión — sin sesión, sigue mostrando Iniciar sesión/Crear cuenta. `pages/About.jsx`
-  (`/acerca`) es la página institucional real (qué es AnimeCLZ, misión, objetivos, tecnologías,
-  arquitectura, FAQ, contacto, privacidad, términos) — el Footer (`constants/index.js`, `FOOTER_LINKS`)
-  ya no apunta a rutas de relleno en inglés que no existían, sino a anclas reales dentro de esa página.
+- **Perfiles múltiples (v1.1):** ver sección Autenticación para el detalle de perfiles/roles/avatares.
+  `AccountMenu.jsx` (Navbar) muestra avatar + nombre + rol del perfil activo directamente en el botón
+  (antes solo un círculo con iniciales de la cuenta) y su menú incluye Mi Perfil/Cambiar Perfil/Mi
+  Lista/Favoritos/Historial/Configuración/Panel de Administración (solo staff)/Cerrar sesión — sin
+  sesión, sigue mostrando Iniciar sesión/Crear cuenta.
+- **Landing Page + Navbar + roles (v1.3):** `pages/Landing.jsx` (`/`) reemplazó a la antigua página
+  institucional (`pages/About.jsx`/`/acerca`, que ahora solo redirige a `/` preservando el hash) como
+  página principal pública — vive fuera del `Layout` (header propio + `layout/Footer.jsx` reutilizado al
+  pie), con Hero, Qué es AnimeCLZ, Características, Estadísticas del catálogo (datos reales, vía
+  `AnimeProvider`), Tecnologías, Capturas del sistema (estructura lista, sin capturas reales todavía —
+  agregar en `public/screenshots/`), FAQ, Contacto, Privacidad y Términos. El botón "Explorar Anime"
+  dirige a `/iniciar-sesion` sin sesión, a `/inicio` con sesión. El logo del Navbar (no el de la Landing,
+  que siempre apunta a `/`) es condicional: `/` sin sesión, `/inicio` con sesión — mismo criterio para
+  los redirects tras cerrar sesión (`Navbar.jsx`/`AccountMenu.jsx`/`Profile.jsx` navegan a `ROUTES.LANDING`,
+  no a `ROUTES.HOME`, al cerrar sesión). `NAV_LINKS` (`constants/index.js`) ahora incluye Favoritos/Mi
+  Lista/Historial (antes solo en el menú de cuenta) además de Inicio/Explorar/Temporada — "Top" quedó
+  fuera de `NAV_LINKS` a propósito (no estaba en la lista pedida), su ruta sigue viva. Rol `SUPER_ADMIN` +
+  Panel de Gestión de Usuarios (`pages/admin/Users.jsx`, gated por `ROLE_MANAGEMENT_ROLES`) para cambiar
+  el rol de cualquier cuenta salvo la propia — ver sección Autenticación para el detalle completo.
 
 ## Objetivo final
 

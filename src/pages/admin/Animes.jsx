@@ -6,7 +6,7 @@ import DataTable from '@/components/admin/DataTable'
 import Select from '@/components/ui/Select'
 import Pagination from '@/components/catalog/Pagination'
 import useFetch from '@/hooks/useFetch'
-import { discoverAnime } from '@/services/animeService'
+import { discoverAnime } from '@/providers/AnimeProvider'
 import { ANIME_TYPES, ANIME_STATUS, STATUS_LABELS, animeDetailPath } from '@/constants'
 
 const TYPE_OPTIONS = [{ value: '', label: 'Todos los formatos' }, ...ANIME_TYPES]

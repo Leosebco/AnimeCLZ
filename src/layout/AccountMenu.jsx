@@ -31,7 +31,7 @@ function AccountMenu() {
 
   const handleSignOut = async () => {
     await signOut()
-    navigate(ROUTES.HOME)
+    navigate(ROUTES.LANDING)
   }
 
   if (!isAuthenticated) {

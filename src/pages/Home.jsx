@@ -10,7 +10,7 @@ import {
   getMostPopular,
   getBestRated,
   getRecommendations,
-} from '@/services/animeService'
+} from '@/providers/AnimeProvider'
 
 // Home fires 6 independent queries on mount. Request pacing/concurrency is
 // handled centrally by the queue in api/jikan.js — no manual staggering

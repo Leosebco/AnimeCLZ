@@ -3,7 +3,7 @@ import Container from '@/components/ui/Container'
 import MovieGrid from '@/components/catalog/MovieGrid'
 import Pagination from '@/components/catalog/Pagination'
 import useFetch from '@/hooks/useFetch'
-import { getCurrentSeason } from '@/services/animeService'
+import { getCurrentSeason } from '@/providers/AnimeProvider'
 
 function Season() {
   const [page, setPage] = useState(1)

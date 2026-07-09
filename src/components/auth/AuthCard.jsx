@@ -12,7 +12,7 @@ function AuthCard({ title, subtitle, children, footer }) {
     <Container className="flex min-h-screen items-center justify-center pt-24 pb-16">
       <div className="w-full max-w-md rounded-2xl border border-border bg-card p-8">
         <Link
-          to={ROUTES.HOME}
+          to={ROUTES.LANDING}
           className="mb-6 flex items-center justify-center gap-2 font-display text-lg font-bold text-text"
         >
           <Clapperboard className="text-primary" size={22} aria-hidden />

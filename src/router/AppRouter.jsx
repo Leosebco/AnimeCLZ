@@ -9,6 +9,7 @@ import { ROUTES, STAFF_ROLES } from '@/constants'
 
 // Route-level code splitting: each page ships in its own chunk and only
 // loads when the user actually navigates there.
+const Landing = lazy(() => import('@/pages/Landing'))
 const Home = lazy(() => import('@/pages/Home'))
 const Explore = lazy(() => import('@/pages/Explore'))
 const Season = lazy(() => import('@/pages/Season'))
@@ -67,6 +68,7 @@ function AppRouter() {
   return (
     <Suspense fallback={<RouteFallback />}>
       <Routes>
+        <Route path={ROUTES.LANDING} element={<Landing />} />
         <Route path={ROUTES.LOGIN} element={<Login />} />
         <Route path={ROUTES.REGISTER} element={<Register />} />
         <Route path={ROUTES.FORGOT_PASSWORD} element={<ForgotPassword />} />

@@ -143,9 +143,32 @@
 - [x] Footer actualizado: ya no enlaza a rutas de relleno en inglés que nunca existieron — ahora apunta a anclas reales de `/acerca`.
 - [x] Página `/configuracion` (usuario) — misma arquitectura "estructura lista, sin lógica" que `/admin/configuracion`.
 - [ ] Favoritos/Mi Lista/Historial por perfil (hoy siguen por cuenta — decisión de alcance documentada, no pedida en esta pasada).
-- [ ] Edición de rol desde ninguna UI (ni cuenta ni perfil) — sigue siendo solo SQL Editor + triggers de sincronización.
+- [x] Edición de rol desde una UI real. (v1.3 — Panel de Gestión de Usuarios, solo para `super_admin`)
 - [ ] Lógica real de Configuración (tema/idioma/notificaciones/privacidad) — sigue sin implementarse, solo estructura.
 - [ ] Integración de Estudios con `/producers` de Jikan (seguía pendiente desde v0.10, no se tocó en esta pasada).
+
+---
+
+## v1.3 — Landing Page, navegación y sistema de permisos
+
+- [x] Landing Page real (`pages/Landing.jsx`, ruta `/`) — reemplaza a la antigua `/acerca`.
+- [x] Home (catálogo) movido a `/inicio`; `/` ahora es la Landing.
+- [x] `/acerca` convertida en redirect a `/` (preserva el hash) — archivo conservado, no borrado.
+- [x] Hero + CTA "Explorar Anime" (condicional: login sin sesión, `/inicio` con sesión).
+- [x] Secciones nuevas: Características, Estadísticas del catálogo (datos reales), Capturas del sistema (estructura, sin imágenes reales todavía).
+- [x] Logo del Navbar condicional (`/` sin sesión, `/inicio` con sesión); redirects post-logout a la Landing.
+- [x] Navbar: Favoritos, Mi Lista e Historial movidos al menú principal (antes solo en el menú de cuenta).
+- [x] "Top" fuera de `NAV_LINKS` a propósito — su ruta sigue funcionando, solo sin enlace en el menú.
+- [x] Arquitectura de proveedores: `providers/AnimeProvider.js` (único punto de entrada), `providers/jikan/JikanProvider.js` (activo), `providers/anilist/AniListProvider.js` y `providers/tmdb/TMDBProvider.js` (stubs).
+- [x] 10 archivos migrados para importar de `AnimeProvider` en vez de `services/animeService.js` directamente.
+- [x] Arquitectura de sinopsis en español: tabla `anime_synopsis_es` (migración 0012) + overlay en `animeService.js` — no traduce en tiempo real.
+- [x] Rol `SUPER_ADMIN` (migración 0013) + `leoseb.co@gmail.com` elevado automáticamente.
+- [x] Panel de Gestión de Usuarios: cambiar el rol de cualquier cuenta (solo `super_admin`), bloqueado cambiar el propio rol.
+- [x] Bug real corregido: los triggers de protección de rol usaban `auth.uid()`, que es `NULL` fuera de una sesión con JWT — habría bloqueado incluso la propia migración de elevación a `super_admin`. Corregido antes de aplicar.
+- [ ] Implementación real de AniList/TMDB — quedan como stubs, a propósito.
+- [ ] Importador/traductor automático de sinopsis desde Jikan — tabla y overlay listos, pipeline no.
+- [ ] Capturas reales del sistema en la Landing.
+- [ ] Edición de rol de un perfil individual (solo cuenta) — se edita el rol de cuenta, que se propaga.
 
 ---
 

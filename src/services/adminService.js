@@ -65,6 +65,27 @@ export async function listUsers({ page = 1, search = '', role = '' } = {}) {
   return { data, total: count ?? 0, page, pageSize: PAGE_SIZE }
 }
 
+/**
+ * Panel de Gestión de Usuarios (v1.3) — cambia el rol de CUENTA
+ * (`profiles.role`). El trigger `sync_default_profile_rol` (migración
+ * 0009) ya propaga el cambio al perfil predeterminado de esa cuenta, que
+ * es el que realmente controla el acceso al Panel de Administración —
+ * no hace falta escribir en `profiles_account` desde aquí.
+ *
+ * El trigger `protect_profile_role` (migración 0013) exige que quien
+ * llama sea `super_admin` y bloquea cambiar el propio rol — este
+ * servicio no duplica esa validación, solo deja que el error real de
+ * Postgres (RLS/trigger) llegue como mensaje amable.
+ */
+export async function updateUserRole(userId, role) {
+  if (!isSupabaseConfigured) throw new Error(GENERIC_ERROR)
+  const { error } = await supabase.from('profiles').update({ role }).eq('user_id', userId)
+  if (error) {
+    console.error('[adminService.updateUserRole] Supabase error:', error)
+    throw new Error('No pudimos actualizar el rol. Verifica que tu perfil activo sea Super Administrador.')
+  }
+}
+
 export async function listComments({ page = 1, search = '' } = {}) {
   if (!isSupabaseConfigured) return { data: [], total: 0, page, pageSize: PAGE_SIZE }
 

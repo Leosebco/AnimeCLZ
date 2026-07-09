@@ -6,7 +6,7 @@ import Skeleton from '@/components/ui/Skeleton'
 import EmptyState from '@/components/ui/EmptyState'
 import useFetch from '@/hooks/useFetch'
 import useDebounce from '@/hooks/useDebounce'
-import { quickSearchAnime } from '@/services/animeService'
+import { quickSearchAnime } from '@/providers/AnimeProvider'
 import { ROUTES, animeDetailPath } from '@/constants'
 
 /**

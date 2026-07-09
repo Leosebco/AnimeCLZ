@@ -1,4 +1,5 @@
 import jikan from '@/api/jikan'
+import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 
 // ---------------------------------------------------------------------
 // Data source note (v0.8): every function below talks to Jikan directly.
@@ -85,7 +86,28 @@ function mapPagination(pagination) {
     hasNextPage: Boolean(pagination?.has_next_page),
     currentPage: pagination?.current_page ?? 1,
     lastPage: pagination?.last_visible_page ?? 1,
+    // Total real de resultados para esta consulta (no del catálogo
+    // completo de MAL) — usado por Landing.jsx para mostrar una
+    // estadística real ("+N animes"), nunca un número inventado.
+    total: pagination?.items?.total ?? null,
   }
+}
+
+// Arquitectura de sinopsis en español (v1.3, ver migración 0012 y
+// CLAUDE.md): si existe una traducción curada para un mal_id, se muestra
+// en vez de la sinopsis original de Jikan — nunca se traduce en tiempo
+// real. La tabla se puebla desde un futuro importador (no implementado
+// todavía), así que hoy esto es, en la práctica, casi siempre un no-op
+// (la tabla existe pero está vacía) hasta que se cargue contenido.
+async function overlaySpanishSynopsis(items) {
+  if (!isSupabaseConfigured || !items.length) return items
+  const ids = items.map((item) => item.id)
+  const { data, error } = await supabase.from('anime_synopsis_es').select('mal_id, synopsis').in('mal_id', ids)
+  if (error || !data?.length) return items
+  const synopsisByMalId = new Map(data.map((row) => [row.mal_id, row.synopsis]))
+  return items.map((item) =>
+    synopsisByMalId.has(item.id) ? { ...item, synopsis: synopsisByMalId.get(item.id) } : item,
+  )
 }
 
 // Jikan occasionally repeats the same mal_id within a single page under
@@ -102,8 +124,9 @@ function dedupeById(list) {
 
 async function fetchList(path, params, signal) {
   const response = await jikan.get(path, { params, signal })
+  const data = await overlaySpanishSynopsis(dedupeById(response.data.data.map(mapAnime)))
   return {
-    data: dedupeById(response.data.data.map(mapAnime)),
+    data,
     pagination: mapPagination(response.data.pagination),
   }
 }
@@ -205,7 +228,8 @@ export async function quickSearchAnime(query, signal) {
 
 export async function getAnimeById(id, signal) {
   const response = await jikan.get(`/anime/${id}`, { signal })
-  return mapAnimeDetail(response.data.data)
+  const [mapped] = await overlaySpanishSynopsis([mapAnimeDetail(response.data.data)])
+  return mapped
 }
 
 // Main cast only ("Personajes principales") — each entry already carries

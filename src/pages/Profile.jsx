@@ -49,7 +49,7 @@ function Profile() {
   const handleSignOut = async () => {
     setSigningOut(true)
     await signOut()
-    navigate(ROUTES.HOME, { replace: true })
+    navigate(ROUTES.LANDING, { replace: true })
   }
 
   return (
