@@ -38,9 +38,8 @@ function Select({ value, onChange, options, ariaLabel, icon: Icon, className }) 
                 as={motion.div}
                 static
                 initial={{ opacity: 0, y: -6, scale: 0.98 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: -6, scale: 0.98 }}
-                transition={{ duration: 0.18, ease: 'easeOut' }}
+                animate={{ opacity: 1, y: 0, scale: 1, transition: { duration: 0.18, ease: 'easeOut' } }}
+                exit={{ opacity: 0, y: -6, scale: 0.98, transition: { duration: 0.18, ease: 'easeOut' } }}
                 anchor="bottom start"
                 className="custom-scrollbar z-30 mt-2 max-h-64 w-[var(--button-width)] min-w-[10rem] overflow-auto rounded-2xl border border-border bg-surface/95 p-1.5 shadow-2xl backdrop-blur-xl focus:outline-none"
               >

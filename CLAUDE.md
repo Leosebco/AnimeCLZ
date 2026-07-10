@@ -386,6 +386,23 @@ mi lista, historial) y el perfil del usuario.
   `components/ui/Modal.jsx` (v1.1, Headless UI `Dialog` + Framer Motion, mismo patrón de `static` +
   `AnimatePresence`) es, del mismo modo, el único componente de modal del proyecto — usarlo para
   cualquier diálogo nuevo en vez de crear uno ad hoc. Dependencia: `@headlessui/react` (ya instalada).
+  **Bug real (crash) encontrado y corregido tras v1.5:** al componer cualquier subcomponente de Headless
+  UI (`DialogPanel`/`DialogBackdrop` en `Modal.jsx`, `ListboxOptions` en `Select.jsx`, `MenuItems` en
+  `AccountMenu.jsx`) vía `as={motion.div}`, **nunca pasarle un prop `transition` de nivel superior** —
+  Headless UI reserva ese mismo nombre de prop en esos tres componentes (booleano: "usar el sistema de
+  transición propio de Headless UI"), y lo intercepta antes de que llegue a Framer Motion. Si el objeto
+  que Framer Motion espera ahí (`{ duration, ease }`) llega en cambio a Headless UI, lo lee como truthy y
+  envuelve el elemento en su propio `Transition.Child` interno — que revienta con `A <Transition.Child />
+  is used but it is missing a parent <Transition /> o <Transition.Root />` en cualquier componente que
+  además use `static` (que evita que Headless UI cree ese contexto de `Transition` en primer lugar). Este
+  crash aparecía al abrir el modal de crear/editar perfil (`ErrorBoundary` capturándolo). **La solución
+  correcta no es evitar `as={motion.div}` ni quitar `static`** — es dejar de pasar `transition` como prop
+  del elemento y en cambio embeberlo dentro de cada objeto `animate`/`exit` (Framer Motion soporta ambas
+  formas): `animate={{ opacity: 1, transition: { duration: 0.2 } }}` en vez de `animate={{ opacity: 1 }}
+  transition={{ duration: 0.2 }}`. Aplica a cualquier componente nuevo que combine Headless UI + Framer
+  Motion de esta forma — no reintroducir un prop `transition` de nivel superior en `DialogPanel`/
+  `DialogBackdrop`/`ListboxOptions`/`MenuItems`/`ComboboxOptions`/`PopoverPanel` (todos comparten el mismo
+  patrón interno).
 - `AnimeCard` ya no tiene un botón "Ver detalles" visible. Desde v1.4, la card entera es un único `Link`
   de cobertura total (`absolute inset-0`), siempre activo — no depende de `:hover` (ver "Sprint móvil" en
   Notas técnicas para el bug real que esto corrige). Play/Información son decorativos, solo refuerzo
@@ -536,6 +553,21 @@ mi lista, historial) y el perfil del usuario.
   confirmado con el usuario, revirtiendo una decisión de v1.1:** Favoritos/Mi Lista/Historial pasaron de
   ser por cuenta a ser por perfil (migración 0021) — cada perfil tiene su propia lista, que se borra de
   verdad al eliminar su perfil. Migraciones 0019-0021.
+- **v1.5.1 — Bug real corregido: crash al abrir el modal de perfil.** "Crear Perfil"/"Editar" disparaba
+  el `ErrorBoundary` con `A <Transition.Child /> is used but it is missing a parent <Transition />`.
+  Causa raíz confirmada leyendo el código fuente de `@headlessui/react` (no adivinada): `Modal.jsx` pasaba
+  un prop `transition={{ duration, ease }}` (pensado para Framer Motion) directamente a `DialogPanel`/
+  `DialogBackdrop` — pero Headless UI reserva ese mismo nombre de prop en esos componentes para su propio
+  sistema de transición (booleano), lo intercepta, lo ve truthy, y los envuelve en su propio
+  `Transition.Child` interno — que revienta porque `Dialog` tenía `static` (por diseño, para que Framer
+  Motion controle la animación en su lugar) y por lo tanto nunca crea el contexto `Transition` que
+  `Transition.Child` necesita. Ver la entrada de `Modal.jsx` en Componentes/Notas de arriba para la regla
+  completa. Corregido en `Modal.jsx`, y con el mismo patrón (mismo bug latente, no confirmado que
+  llegara a crashear ahí) en `Select.jsx`/`ListboxOptions` y `AccountMenu.jsx`/`MenuItems` — los únicos
+  otros dos lugares del proyecto que componen un subcomponente de Headless UI vía `as={motion.div}`.
+  De paso, se corrigió un warning real de Framer Motion sin relación con el crash: `Hero.jsx` tenía dos
+  hijos directos (poster + info) dentro de un `AnimatePresence mode="wait"`, que solo admite un hijo a la
+  vez — consolidados en un único wrapper por slide.
 
 ## Objetivo final
 

@@ -41,16 +41,26 @@ function useIsDesktop() {
 function Modal({ open, onClose, title, children, className }) {
   const isDesktop = useIsDesktop()
 
+  // El `transition` embebido en cada objeto animate/exit (en vez de un prop
+  // `transition` propio en el elemento) es deliberado, no un detalle
+  // estético: `DialogPanel`/`DialogBackdrop` de Headless UI reservan un
+  // prop llamado `transition` (booleano — "usar el sistema de transición
+  // propio de Headless UI") que colisiona con el `transition` de Framer
+  // Motion (config de timing) cuando se componen vía `as={motion.div}`. Si
+  // se pasa como prop de nivel superior, Headless UI lo intercepta, lo ve
+  // truthy, y envuelve el panel en su propio `Transition.Child` — que
+  // revienta con "is missing a parent <Transition />" porque `Dialog` tiene
+  // `static` (no crea ese contexto). Ver CLAUDE.md para el detalle completo.
   const panelMotion = isDesktop
     ? {
         initial: { opacity: 0, scale: 0.96, y: 8 },
-        animate: { opacity: 1, scale: 1, y: 0 },
-        exit: { opacity: 0, scale: 0.96, y: 8 },
+        animate: { opacity: 1, scale: 1, y: 0, transition: { duration: 0.25, ease: 'easeOut' } },
+        exit: { opacity: 0, scale: 0.96, y: 8, transition: { duration: 0.25, ease: 'easeOut' } },
       }
     : {
         initial: { opacity: 0, y: '100%' },
-        animate: { opacity: 1, y: 0 },
-        exit: { opacity: 0, y: '100%' },
+        animate: { opacity: 1, y: 0, transition: { duration: 0.25, ease: 'easeOut' } },
+        exit: { opacity: 0, y: '100%', transition: { duration: 0.25, ease: 'easeOut' } },
       }
 
   return (
@@ -60,16 +70,14 @@ function Modal({ open, onClose, title, children, className }) {
           <DialogBackdrop
             as={motion.div}
             initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
+            animate={{ opacity: 1, transition: { duration: 0.2 } }}
+            exit={{ opacity: 0, transition: { duration: 0.2 } }}
             className="fixed inset-0 bg-background/80 backdrop-blur-sm"
           />
           <div className="fixed inset-0 flex items-end justify-center sm:items-center sm:p-4">
             <DialogPanel
               as={motion.div}
               {...panelMotion}
-              transition={{ duration: 0.25, ease: 'easeOut' }}
               className={cn(
                 'custom-scrollbar w-full max-h-[90vh] overflow-y-auto rounded-t-3xl border border-border bg-surface p-6 shadow-2xl',
                 'pb-[calc(1.5rem+env(safe-area-inset-bottom))]',

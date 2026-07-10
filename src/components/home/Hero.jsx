@@ -15,12 +15,6 @@ import { cn } from '@/utils/cn'
 const AUTOPLAY_MS = 8000
 const SWIPE_THRESHOLD = 80
 
-const fadeSlide = {
-  hidden: { opacity: 0, x: 24 },
-  visible: { opacity: 1, x: 0 },
-  exit: { opacity: 0, x: -24 },
-}
-
 /**
  * Home hero — a carousel of several real, currently top-rated anime
  * (see getFeaturedSlides in animeService). No fabricated "featured" flag,
@@ -106,97 +100,110 @@ function Hero({ slides, loading, error, onRetry }) {
           dragConstraints={{ left: 0, right: 0 }}
           dragElastic={0.12}
           onDragEnd={handleDragEnd}
-          className="flex w-full flex-col items-center gap-6 sm:flex-row sm:items-end sm:gap-8"
+          className="w-full"
         >
+          {/* AnimatePresence con mode="wait" solo admite un único hijo
+              directo (espera a que termine de salir antes de montar el que
+              entra) — antes, poster e info eran dos hijos directos
+              independientes, lo que producía el warning real "attempting to
+              animate multiple children... mode is set to wait". Ahora un
+              solo wrapper por slide (key={anime.id}) es el único hijo; el
+              fade de ese wrapper ya cubre visualmente a poster+info juntos,
+              y cada uno conserva su propio micro-efecto de entrada (scale/
+              slide) como animación anidada, no independiente. */}
           <AnimatePresence mode="wait">
-            <motion.img
-              key={anime.id}
-              src={anime.poster}
-              srcSet={anime.posterSmall ? `${anime.posterSmall} 1x, ${anime.poster} 2x` : undefined}
-              alt={anime.title}
-              fetchPriority="high"
-              decoding="async"
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              transition={{ duration: 0.4, ease: 'easeOut' }}
-              className="aspect-[2/3] w-32 shrink-0 rounded-2xl object-cover ring-1 ring-border shadow-2xl sm:w-44 md:w-56"
-            />
-
             <motion.div
-              key={`${anime.id}-info`}
-              variants={fadeSlide}
-              initial="hidden"
-              animate="visible"
-              exit="exit"
+              key={anime.id}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
               transition={{ duration: 0.35, ease: 'easeOut' }}
-              className="max-w-2xl"
+              className="flex w-full flex-col items-center gap-6 sm:flex-row sm:items-end sm:gap-8"
             >
-              <span className="mb-5 inline-flex items-center rounded-full border border-border bg-surface/50 px-3.5 py-1.5 text-xs uppercase tracking-widest text-text-secondary backdrop-blur-sm">
-                Destacado
-              </span>
+              <motion.img
+                src={anime.poster}
+                srcSet={anime.posterSmall ? `${anime.posterSmall} 1x, ${anime.poster} 2x` : undefined}
+                alt={anime.title}
+                fetchPriority="high"
+                decoding="async"
+                initial={{ scale: 0.95 }}
+                animate={{ scale: 1 }}
+                transition={{ duration: 0.4, ease: 'easeOut' }}
+                className="aspect-[2/3] w-32 shrink-0 rounded-2xl object-cover ring-1 ring-border shadow-2xl sm:w-44 md:w-56"
+              />
 
-              <h1 className="line-clamp-2 font-display text-3xl font-bold leading-tight text-text sm:text-4xl lg:text-6xl">
-                {anime.title}
-              </h1>
+              <motion.div
+                initial={{ x: 24 }}
+                animate={{ x: 0 }}
+                transition={{ duration: 0.35, ease: 'easeOut' }}
+                className="max-w-2xl"
+              >
+                <span className="mb-5 inline-flex items-center rounded-full border border-border bg-surface/50 px-3.5 py-1.5 text-xs uppercase tracking-widest text-text-secondary backdrop-blur-sm">
+                  Destacado
+                </span>
 
-              <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-text-secondary">
-                {typeof anime.score === 'number' && (
-                  <span className="flex items-center gap-1 text-text">
-                    <Star size={14} className="text-primary" fill="currentColor" />
-                    {anime.score.toFixed(1)}
-                  </span>
-                )}
-                {anime.year && <span>{anime.year}</span>}
-                {anime.type && <span>{anime.type}</span>}
-                {anime.status && <span>{STATUS_LABELS[anime.status] || anime.status}</span>}
-              </div>
+                <h1 className="line-clamp-2 font-display text-3xl font-bold leading-tight text-text sm:text-4xl lg:text-6xl">
+                  {anime.title}
+                </h1>
 
-              {anime.genres?.length > 0 && (
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {anime.genres.slice(0, 4).map((genre) => (
-                    <span
-                      key={genre}
-                      className="rounded-full border border-border px-3 py-1 text-xs text-text-secondary"
-                    >
-                      {genre}
+                <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-text-secondary">
+                  {typeof anime.score === 'number' && (
+                    <span className="flex items-center gap-1 text-text">
+                      <Star size={14} className="text-primary" fill="currentColor" />
+                      {anime.score.toFixed(1)}
                     </span>
-                  ))}
+                  )}
+                  {anime.year && <span>{anime.year}</span>}
+                  {anime.type && <span>{anime.type}</span>}
+                  {anime.status && <span>{STATUS_LABELS[anime.status] || anime.status}</span>}
                 </div>
-              )}
 
-              {synopsis && (
-                <p className="mt-6 line-clamp-4 max-w-xl text-sm leading-relaxed text-text-secondary sm:line-clamp-none sm:text-base">
-                  {synopsis}
-                </p>
-              )}
+                {anime.genres?.length > 0 && (
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {anime.genres.slice(0, 4).map((genre) => (
+                      <span
+                        key={genre}
+                        className="rounded-full border border-border px-3 py-1 text-xs text-text-secondary"
+                      >
+                        {genre}
+                      </span>
+                    ))}
+                  </div>
+                )}
 
-              <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-                <Button as={Link} to={animeDetailPath(anime.id)} size="lg" className="w-full sm:w-auto">
-                  <Play size={18} fill="currentColor" />
-                  Ver Ahora
-                </Button>
-                <Button
-                  variant="secondary"
-                  size="lg"
-                  onClick={() => requireAuth(() => toggleFavorite(anime))}
-                  aria-pressed={favorite}
-                  className="w-full sm:w-auto"
-                >
-                  <Heart size={18} fill={favorite ? 'currentColor' : 'none'} />
-                  {favorite ? 'En Favoritos' : 'Favorito'}
-                </Button>
-                <Button
-                  variant="secondary"
-                  size="lg"
-                  onClick={() => requireAuth(() => toggleWatchLater(anime))}
-                  aria-pressed={inWatchLater}
-                  className="w-full sm:w-auto"
-                >
-                  <Bookmark size={18} fill={inWatchLater ? 'currentColor' : 'none'} />
-                  {inWatchLater ? 'En Mi Lista' : 'Mi Lista'}
-                </Button>
-              </div>
+                {synopsis && (
+                  <p className="mt-6 line-clamp-4 max-w-xl text-sm leading-relaxed text-text-secondary sm:line-clamp-none sm:text-base">
+                    {synopsis}
+                  </p>
+                )}
+
+                <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+                  <Button as={Link} to={animeDetailPath(anime.id)} size="lg" className="w-full sm:w-auto">
+                    <Play size={18} fill="currentColor" />
+                    Ver Ahora
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="lg"
+                    onClick={() => requireAuth(() => toggleFavorite(anime))}
+                    aria-pressed={favorite}
+                    className="w-full sm:w-auto"
+                  >
+                    <Heart size={18} fill={favorite ? 'currentColor' : 'none'} />
+                    {favorite ? 'En Favoritos' : 'Favorito'}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="lg"
+                    onClick={() => requireAuth(() => toggleWatchLater(anime))}
+                    aria-pressed={inWatchLater}
+                    className="w-full sm:w-auto"
+                  >
+                    <Bookmark size={18} fill={inWatchLater ? 'currentColor' : 'none'} />
+                    {inWatchLater ? 'En Mi Lista' : 'Mi Lista'}
+                  </Button>
+                </div>
+              </motion.div>
             </motion.div>
           </AnimatePresence>
         </motion.div>
