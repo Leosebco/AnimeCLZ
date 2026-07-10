@@ -45,6 +45,24 @@ body {
   color: var(--color-text);
   font-family: var(--font-body);
   scroll-behavior: smooth;
+  /* Red de seguridad (sprint móvil): ningún elemento debería desbordar
+     horizontalmente, pero esto evita que un descuido puntual produzca
+     scroll horizontal de página. El scroll horizontal intencional
+     (MovieRow, DataTable) vive en wrappers `overflow-x-auto` propios, que
+     no se ven afectados por esto. */
+  overflow-x: hidden;
+}
+
+/* Safe-area (notch/Dynamic Island/home indicator de iOS) — se aplican al
+   elemento que ya tiene su propio padding "visual" (header fijo, drawers,
+   bottom sheets), nunca reemplazan ese padding: al vivir en el elemento
+   contenedor exterior, se suman en vez de pisarlo. Requiere
+   `viewport-fit=cover` en el <meta name="viewport"> de index.html. */
+.safe-top {
+  padding-top: env(safe-area-inset-top);
+}
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 /* Visible keyboard focus everywhere — accessibility floor */
@@ -110,6 +128,81 @@ body {
   );
   background-size: 200% 100%;
   animation: shimmer-sweep 1.8s ease-in-out infinite;
+}
+
+/* ---------------------------------------------------------
+   Sistema de temas (v1.0) — ver constants/index.js (THEMES) y
+   context/ThemeContext.jsx. Cada bloque redefine los mismos tokens del
+   @theme de arriba bajo [data-theme="..."] en <html>; como toda la UI ya
+   consume esos tokens (bg-background, text-primary, bg-card...) vía
+   utilidades de Tailwind, cambiar el atributo alcanza para retemar el
+   sitio entero — ningún componente necesita saber que existen temas.
+   "original" (el default) no tiene bloque propio: usa las variables base
+   de :root de arriba. Error se mantiene igual en todos los temas a
+   propósito (un estado de error reconocible sea cual sea la paleta).
+   Sunset Orange es la única excepción documentada a "prohibido naranja
+   como color de marca" (CLAUDE.md) — esa regla rige el tema por
+   defecto/la identidad de marca, no las paletas opcionales que el propio
+   usuario elige activamente. */
+:root[data-theme="purple-night"] {
+  --color-background: #0f0a1f;
+  --color-surface: #170f2e;
+  --color-card: #201640;
+  --color-hover: #2b1d54;
+  --color-primary: #9d6fff;
+  --color-primary-hover: #b48cff;
+  --color-secondary: #c77dff;
+}
+
+:root[data-theme="ocean-blue"] {
+  --color-background: #061620;
+  --color-surface: #0b2436;
+  --color-card: #123249;
+  --color-hover: #1a4360;
+  --color-primary: #22b8cf;
+  --color-primary-hover: #4dd0e1;
+  --color-secondary: #2e86ab;
+}
+
+:root[data-theme="sakura-pink"] {
+  --color-background: #170b14;
+  --color-surface: #241120;
+  --color-card: #33172c;
+  --color-hover: #45203c;
+  --color-primary: #ff7ac6;
+  --color-primary-hover: #ff9ad5;
+  --color-secondary: #ffb6e1;
+}
+
+:root[data-theme="emerald"] {
+  --color-background: #041712;
+  --color-surface: #0a241c;
+  --color-card: #113328;
+  --color-hover: #1a4636;
+  --color-primary: #22c58d;
+  --color-primary-hover: #34d399;
+  --color-secondary: #10b981;
+}
+
+:root[data-theme="sunset-orange"] {
+  --color-background: #1a0f07;
+  --color-surface: #26140a;
+  --color-card: #381d0e;
+  --color-hover: #4a2814;
+  --color-primary: #ff8a4c;
+  --color-primary-hover: #ffa36b;
+  --color-secondary: #ffb84c;
+}
+
+:root[data-theme="cyber-neon"] {
+  --color-background: #05050a;
+  --color-surface: #0b0b14;
+  --color-card: #12121f;
+  --color-hover: #1c1c2e;
+  --color-border: rgba(255, 255, 255, 0.12);
+  --color-primary: #00e5ff;
+  --color-primary-hover: #4dfbff;
+  --color-secondary: #ff2fd1;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -8,7 +8,10 @@ const VARIANTS = {
 
 const SIZES = {
   sm: 'px-4 py-1.5 text-sm',
-  md: 'px-5 py-2.5 text-sm',
+  // py-3 + text-sm (20px line-height) = 44px de alto — el tamaño por
+  // defecto es el que usan los CTAs primarios (login, registro, perfil),
+  // así que debe cumplir el mínimo táctil de 44x44px.
+  md: 'px-5 py-3 text-sm',
   lg: 'px-7 py-3 text-base',
 }
 

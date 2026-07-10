@@ -2,19 +2,23 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 
 /**
  * Estado + acciones compartidas entre FavoritesContext y WatchLaterContext:
- * ambas son "una lista de animes persistida en Supabase, por usuario", solo
+ * ambas son "una lista de animes persistida en Supabase, por perfil", solo
  * cambia qué tabla/servicio usan. Actualización optimista con reversión si
  * la escritura falla (sin bloquear la UI en cada click).
+ *
+ * v1.5: el scope real es `profileId` (antes era `userId`/la cuenta — ver
+ * migración 0021) — `accountId` solo hace falta para `add` (la columna
+ * `user_id` sigue siendo NOT NULL en las tablas, por RLS).
  */
-export function useUserCollection({ userId, list, add, remove }) {
+export function useUserCollection({ accountId, profileId, list, add, remove }) {
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    if (!userId) return
+    if (!profileId) return
     let active = true
     setLoading(true)
-    list(userId)
+    list(profileId)
       .then((data) => {
         if (active) setItems(data)
       })
@@ -27,24 +31,24 @@ export function useUserCollection({ userId, list, add, remove }) {
     return () => {
       active = false
     }
-  }, [userId, list])
+  }, [profileId, list])
 
   // Deriva en vez de "resetear" items con un setState extra en el efecto de
-  // arriba: sin userId (sesión cerrada) la lista visible es vacía sin un
-  // segundo setState síncrono. Memoizado para no invalidar isSaved/toggle
-  // en cada render (solo cambia cuando items o userId realmente cambian).
-  const visibleItems = useMemo(() => (userId ? items : []), [userId, items])
+  // arriba: sin profileId (sin perfil activo) la lista visible es vacía sin
+  // un segundo setState síncrono. Memoizado para no invalidar isSaved/toggle
+  // en cada render (solo cambia cuando items o profileId realmente cambian).
+  const visibleItems = useMemo(() => (profileId ? items : []), [profileId, items])
 
   const isSaved = useCallback((id) => visibleItems.some((item) => item.id === id), [visibleItems])
 
   const toggle = useCallback(
     async (anime) => {
-      if (!userId) return
+      if (!profileId || !accountId) return
       const alreadySaved = items.some((item) => item.id === anime.id)
       setItems((prev) => (alreadySaved ? prev.filter((item) => item.id !== anime.id) : [anime, ...prev]))
       try {
-        if (alreadySaved) await remove(userId, anime.id)
-        else await add(userId, anime)
+        if (alreadySaved) await remove(profileId, anime.id)
+        else await add(accountId, profileId, anime)
       } catch (error) {
         setItems((prev) =>
           alreadySaved ? [anime, ...prev] : prev.filter((item) => item.id !== anime.id),
@@ -52,11 +56,11 @@ export function useUserCollection({ userId, list, add, remove }) {
         throw error
       }
     },
-    [userId, items, add, remove],
+    [accountId, profileId, items, add, remove],
   )
 
   return useMemo(
-    () => ({ items: visibleItems, isSaved, toggle, loading: userId ? loading : false }),
-    [visibleItems, isSaved, toggle, loading, userId],
+    () => ({ items: visibleItems, isSaved, toggle, loading: profileId ? loading : false }),
+    [visibleItems, isSaved, toggle, loading, profileId],
   )
 }

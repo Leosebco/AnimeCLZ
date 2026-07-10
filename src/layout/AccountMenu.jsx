@@ -26,17 +26,22 @@ const MENU_LINKS = [
  */
 function AccountMenu() {
   const { isAuthenticated, user, signOut } = useAuth()
-  const { activeProfile } = useProfile()
+  const { activeProfile, clearActiveProfile } = useProfile()
   const navigate = useNavigate()
 
   const handleSignOut = async () => {
     await signOut()
+    // Cerrar sesión es uno de los momentos en los que el selector de
+    // perfiles SÍ debe volver a aparecer (v1.0) — sin esto, un login
+    // rápido de la misma cuenta reutilizaría el perfil recordado sin
+    // preguntar, aunque el usuario haya cerrado sesión a propósito.
+    clearActiveProfile()
     navigate(ROUTES.LANDING)
   }
 
   if (!isAuthenticated) {
     return (
-      <div className="hidden sm:flex items-center gap-1.5">
+      <div className="hidden md:flex items-center gap-1.5">
         <Link
           to={ROUTES.LOGIN}
           className="rounded-full px-3.5 py-2 text-sm font-medium text-text-secondary transition-colors hover:bg-hover hover:text-text"
@@ -64,7 +69,7 @@ function AccountMenu() {
         <>
           <MenuButton
             aria-label="Cuenta"
-            className="flex items-center gap-2 rounded-full py-1 pl-1 pr-2.5 transition-colors hover:bg-hover"
+            className="flex min-h-11 items-center gap-2 rounded-full py-1 pl-1 pr-2.5 transition-colors hover:bg-hover"
           >
             <ProfileAvatar
               avatar={activeProfile.avatar}
@@ -73,7 +78,7 @@ function AccountMenu() {
               nombre={activeProfile.nombre}
               size={32}
             />
-            <span className="hidden text-left leading-tight sm:block">
+            <span className="hidden text-left leading-tight md:block">
               <span className="block text-sm font-medium text-text">{activeProfile.nombre}</span>
               <span className="block text-xs text-text-secondary">
                 {ROLE_LABELS[activeProfile.rol] || activeProfile.rol}

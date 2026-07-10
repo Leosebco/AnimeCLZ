@@ -205,18 +205,73 @@ mi lista, historial) y el perfil del usuario.
     se eleva automáticamente a `super_admin`: si ya existía, la migración 0013 la elevó directamente; si
     se registra en el futuro, `handle_new_user()` (reescrita en 0013) la crea así desde el principio. No
     hay una segunda cuenta hardcodeada en ningún otro lugar — ese es el único caso especial.
-- **Perfiles múltiples por cuenta (v1.1, estilo Netflix):** una cuenta (login con Google/correo) puede
-  tener varios perfiles (`profiles_account`, migración 0009) — no varias cuentas. Cada perfil tiene su
-  propio nombre, avatar, color y rol. `context/ProfileContext.jsx` + `hooks/useProfile.js` son la fuente
-  única de verdad del perfil activo; se recuerda en `localStorage` por cuenta
+  - **Bug real de RLS encontrado en v1.0 (migraciones 0017/0018) — recordar para cualquier UPDATE/DELETE
+    futuro "de staff sobre fila ajena":** un trigger `before update`/`before delete` NUNCA corre si la
+    policy de RLS ya filtró la fila antes — un `GRANT` de tabla (migración 0011) tampoco alcanza, porque
+    RLS sigue restringiendo filas por encima del grant. La única policy de `UPDATE` en `profiles` (desde
+    la migración 0001) era `auth.uid() = user_id`, así que `adminService.updateUserRole` — ya en
+    producción desde v1.3 — llevaba desde entonces actualizando 0 filas en silencio (sin error) al
+    intentar cambiar el rol de OTRA cuenta; el trigger `protect_profile_role` nunca llegaba a ejecutarse.
+    Mismo patrón en `comments` (única policy de `DELETE` también `auth.uid() = user_id`). Se agregó una
+    policy adicional de `UPDATE` para `super_admin` en `profiles` + trigger `protect_profile_activo`
+    (mismo criterio que `protect_profile_role`: no se puede desactivar la propia cuenta) y una policy
+    adicional de `DELETE` para `STAFF_ROLES` en `comments`. **Regla derivada:** cualquier acción nueva de
+    "un rol de staff modifica/elimina la fila de otra cuenta/usuario" necesita su propia policy de RLS
+    que deje pasar la fila para ese rol — un trigger de validación fina no sustituye eso, corre después.
+- **Perfiles múltiples por cuenta (v1.1, estilo Netflix; completado en v1.5):** una cuenta (login con
+  Google/correo) puede tener varios perfiles (`profiles_account`, migración 0009) — no varias cuentas.
+  Cada perfil tiene su propio nombre, avatar, color, rol, tema (`tema`, migración 0014) y fondo (`fondo`,
+  migración 0020 — ver "Fondo del perfil" más abajo). `context/ProfileContext.jsx` + `hooks/useProfile.js`
+  son la fuente única de verdad del perfil activo; se recuerda en `localStorage` por cuenta
   (`animeclz:activeProfile:{accountId}`) para no mostrar el selector en cada visita. Tras el login/
   registro, `Login.jsx`/`Register.jsx` navegan a `/perfiles` (no directo a Inicio); `Layout.jsx`/
   `ProtectedRoute.jsx` refuerzan que ninguna pantalla se muestre con sesión activa pero sin perfil
   elegido. El primer perfil de cada cuenta se autogenera al registrarse (trigger en migración 0009) y es
-  el único que no se puede eliminar (`defaultProfileId` en `useProfile()`) — `Profile.jsx` ("Mi Perfil")
-  lo refleja. **Importante:** Favoritos/Mi Lista/Historial siguen siendo por CUENTA, no por perfil — no
-  se fragmentaron en v1.1 a propósito (ver ROADMAP.md); el sistema de perfiles hoy solo cambia identidad
-  visual y rol, no qué contenido ve cada perfil.
+  el único que no se puede eliminar desde la UI (`defaultProfileId` en `useProfile()`) — `Profile.jsx`
+  ("Mi Perfil") lo refleja; `ProfileSelect.jsx` además permite Editar/Eliminar cualquier perfil
+  directamente desde su propia tarjeta en la grilla (v1.5, antes solo existía para el perfil activo vía
+  "Mi Perfil"). **Máximo 4 perfiles por cuenta** (`MAX_PROFILES` en `constants/index.js`) — el trigger
+  `enforce_max_profiles` (migración 0019) es la validación real, el frontend solo evita el intento antes
+  del round-trip. **Importante (corregido en v1.5 — antes era distinto a propósito):** Favoritos/Mi
+  Lista/Historial pasaron de ser por CUENTA a ser por PERFIL (`profile_id` en `favorites`/`watch_later`/
+  `watch_history`, migración 0021) — cada perfil de una misma cuenta tiene su propia lista, y se elimina
+  de verdad al eliminar su perfil (ver "Eliminar perfil" más abajo). El sistema de perfiles ya no solo
+  cambia identidad visual/rol/tema/fondo — también determina qué contenido ve cada perfil.
+  - **Eliminar perfil (`deactivateProfile`, baja lógica `activo=false`) está protegido en la base, no solo
+    en la UI (v1.5, migración 0019):** el trigger `protect_profile_account_deletion` bloquea eliminar el
+    único perfil activo restante de una cuenta, y bloquea eliminar el perfil con `rol <> 'usuario'` (el
+    único que puede tenerlo es el sincronizado por `sync_default_profile_rol` — ver "Roles" más abajo),
+    para no dejar una cuenta sin ningún perfil con acceso al Panel de Administración. Ambos casos lanzan
+    un mensaje ya amable en español que `profilesAccountService.deactivateProfile` deja pasar tal cual
+    (no lo reemplaza por uno genérico) para mostrarlo en el `ConfirmDialog` de `Profile.jsx`/
+    `ProfileSelect.jsx`. Al eliminar un perfil, un segundo trigger (`cleanup_profile_data`, misma
+    migración) borra de verdad (DELETE real, no lógico) sus filas en `favorites`/`watch_later`/
+    `watch_history` — `on delete cascade` en `profile_id` no alcanza para esto porque desactivar un
+    perfil es un UPDATE, no un DELETE de la fila. Comentarios queda fuera a propósito: `comments.user_id`
+    referencia la cuenta, no hay concepto de autoría por perfil, y no existe interfaz pública para
+    crearlos todavía.
+  - **Fondo del perfil (v1.5, migración 0020, columna `profiles_account.fondo`):** acento decorativo
+    detrás del avatar en el selector de perfiles y en el encabezado de "Mi Perfil" — deliberadamente NO
+    reemplaza el fondo de toda la app (eso sigue siendo del sistema de Temas exclusivamente, decisión
+    confirmada con el usuario). `constants/index.js` → `PROFILE_BACKGROUNDS`: gradientes CSS puros con
+    nombres inspirados en anime (Sakura, Cyber Noche, Fuego Shonen, Océano Ghibli...) — nunca imágenes
+    externas, para no fabricar/licenciar arte que no existe. Se edita desde `ProfileFormModal.jsx` (junto
+    con Tema, ahora también editable ahí para cualquier perfil, no solo desde `Settings.jsx` para el
+    activo) vía los componentes presentacionales `ThemePickerGrid.jsx`/`BackgroundPickerGrid.jsx` — a
+    diferencia del picker de `Settings.jsx`, estos son solo estado de formulario local (no aplican el
+    tema/fondo en vivo), porque el modal puede estar editando un perfil que no es el activo.
+  - **El selector NO debe reaparecer en cada refresh (bug real corregido en v1.0):** antes, una condición
+    de carrera entre el fetch de perfiles y la restauración desde `localStorage` hacía que `Layout.jsx`
+    redirigiera a `/perfiles` incluso con un perfil activo válido. Se corrigió unificando ambos pasos
+    dentro de `fetchProfiles()`. El selector solo debe volver a aparecer en 4 casos: iniciar sesión,
+    cambiar de cuenta, cerrar sesión, o volver tras inactividad prolongada — nunca en un refresh normal.
+    Para eso, `ProfileContext.jsx` mantiene un timestamp de última actividad por cuenta
+    (`activityKey()`/`touchActivity()`/`isActivityFresh()`, TTL de 30 min, `ACTIVITY_TTL_MS`), actualizado
+    por un heartbeat (mount + `setInterval` de 60s + evento `visibilitychange`). `clearActiveProfile()`
+    (ya existía en el contexto) se invoca explícitamente en los tres cierres de sesión reales
+    (`AccountMenu.jsx`, `Navbar.jsx` móvil, `Profile.jsx`) — sin esa llamada expresa, cerrar sesión NO
+    limpia el perfil recordado. Si se agrega un cuarto punto de cierre de sesión, debe llamar a
+    `clearActiveProfile()` también, o el selector no reaparecerá ahí.
   - Avatar: `AvatarPicker.jsx` ofrece tres modos (`AVATAR_TYPES` en `constants/index.js`) — `inicial`
     (círculo de color + letra, por defecto, sin imagen), `subida` (imagen propia a Supabase Storage,
     bucket `avatars` de la migración 0010, `services/avatarService.js`) y `personaje` (elegido desde
@@ -228,19 +283,56 @@ mi lista, historial) y el perfil del usuario.
 - **Favoritos vs. Mi Lista son dos listas distintas** (decisión tomada al llegar Supabase, ya anticipada
   en ROADMAP.md desde v0.8): `favorites` = "me gusta" (♥, `FavoritesContext`/`useFavorites()`);
   `watch_later` = "quiero verlo después" (`WatchLaterContext`/`useWatchLater()`). Ambos hooks comparten
-  lógica vía `hooks/useUserCollection.js` — no dupliques ese patrón para una tercera lista sin pasar
-  también por ahí. Todas las acciones de guardar (card, Hero, AnimeDetail) exigen sesión: si no hay
-  usuario, redirigen a `/iniciar-sesion` en vez de fallar silenciosamente o loguear localmente.
-- `watch_history` (tabla) está preparada para "Continuar viendo" pero **nada la escribe todavía** — no
-  hay reproductor. `services/historyService.js` y `/historial` ya existen para cuando lo haya (fase
+  lógica vía `hooks/useUserCollection.js` (factory de servicio compartida en `services/
+  collectionService.js`) — no dupliques ese patrón para una tercera lista sin pasar también por ahí.
+  Todas las acciones de guardar (card, Hero, AnimeDetail) exigen sesión: si no hay usuario, redirigen a
+  `/iniciar-sesion` en vez de fallar silenciosamente o loguear localmente. **Desde v1.5 son por PERFIL,
+  no por cuenta** (`profile_id`, migración 0021 — ver "Perfiles múltiples" más arriba): `FavoritesContext`/
+  `WatchLaterContext` leen tanto `useAuth()` (accountId, todavía necesario para la columna `user_id`,
+  NOT NULL por RLS) como `useProfile()` (profileId, el scope real de lectura/escritura). Las políticas de
+  INSERT de las tres tablas además verifican que el `profile_id` enviado pertenezca de verdad a una
+  cuenta con `exists(select 1 from profiles_account ...)` — sin eso, `auth.uid() = user_id` no alcanza
+  para impedir que una cuenta escriba con el `profile_id` de un perfil ajeno.
+- `watch_history` (tabla, también por perfil desde v1.5) está preparada para "Continuar viendo" pero
+  **nada la escribe todavía** — no hay reproductor. `services/historyService.js` (`listHistory(profileId)`/
+  `upsertProgress(accountId, profileId, {...})`) y `/historial` ya existen para cuando lo haya (fase
   "Streaming" del ROADMAP); no fabricar entradas falsas mientras tanto.
-- `ratings`, `comments`, `notifications` son tablas preparadas (con RLS) sin interfaz — no construir UI
-  para ellas hasta que se pida explícitamente.
+- `ratings`, `notifications` son tablas preparadas (con RLS) sin interfaz — no construir UI para ellas
+  hasta que se pida explícitamente. `comments` ya tiene una acción real desde v1.0: eliminar (moderación,
+  `pages/admin/Comments.jsx` → `adminService.deleteComment`) — sigue sin interfaz pública para crear/
+  editar comentarios (ver ROADMAP.md).
+- **Sistema de temas (v1.0):** `profiles_account.tema` (migración 0014, default `'original'`) — 7
+  paletas (`constants/index.js` → `THEMES`): AnimeCLZ Original, Purple Night, Ocean Blue, Sakura Pink,
+  Emerald, Sunset Orange, Cyber Neon. Cada una es solo un bloque `:root[data-theme="..."]` en
+  `src/styles/index.css` que redefine las mismas variables `--color-*` del `@theme` base — ningún
+  componente necesita cambiar porque todos ya consumen esos tokens vía clases Tailwind
+  (`bg-background`, `text-primary`, etc.). `context/ThemeContext.jsx` + `hooks/useTheme.js` aplican el
+  tema del perfil activo (o de `localStorage` `animeclz:theme:guest` sin sesión) escribiendo
+  `document.documentElement.dataset.theme`; el picker real vive en `pages/Settings.jsx`. Sunset Orange es
+  una excepción puntual y deliberada a "no naranja de marca" — solo aplica si el usuario elige ese tema,
+  nunca al branding por defecto (ver Diseño más arriba).
 - Migraciones SQL organizadas en `supabase/migrations/000N_*.sql` (ver `supabase/migrations/README.md`
-  para cómo aplicarlas) — no se ejecutaron contra ningún proyecto real todavía. Todas las tablas tienen
-  Row Level Security: cada usuario solo lee/escribe sus propias filas (`auth.uid() = user_id`).
-- **Panel de Administrador (v0.10):** arquitectura y navegación implementadas, sin CRUD todavía (ver
-  Notas técnicas más abajo y ROADMAP.md).
+  para cómo aplicarlas) — **sí están aplicadas** contra el proyecto real de Supabase (`supabase db push`,
+  verificadas en vivo con `supabase db query --linked` tras cada una). Todas las tablas tienen Row Level
+  Security: cada usuario solo lee/escribe sus propias filas (`auth.uid() = user_id`), salvo las policies
+  adicionales de staff documentadas arriba (roles, migraciones 0017/0018).
+- **Panel de Administrador:** arquitectura y navegación desde v0.10; primer CRUD real desde v1.0
+  (Noticias, ver más abajo) más moderación real en Usuarios/Comentarios. El resto de módulos (Animes,
+  Temporadas, Episodios, Personajes, Estudios, Configuración) sigue sin CRUD — ver ROADMAP.md para el
+  porqué de cada uno.
+- **Noticias (v1.0, primer CRUD real del Panel):** tabla `news` (migración 0015, propia de AnimeCLZ, no
+  depende de Jikan) + `services/newsService.js` (`listNews`/`createNews`/`updateNews`/`deleteNews`) +
+  `components/admin/NewsFormModal.jsx` + `components/admin/ConfirmDialog.jsx` (nuevo, reutilizable para
+  cualquier confirmación destructiva del panel — sin `window.confirm()`/`alert()`, mismo criterio que el
+  resto de la app). `pages/admin/News.jsx` tiene crear/editar/eliminar/buscar/paginar completos. RLS: SELECT
+  público solo para `published = true`; staff (`STAFF_ROLES` vía `profiles_account.rol`) ve también
+  borradores y puede crear/editar/eliminar.
+- **Activar/desactivar cuenta (v1.0):** `profiles.activo` (migración 0016) + trigger
+  `protect_profile_activo` (migración 0017, mismo patrón que `protect_profile_role`) — solo `super_admin`
+  puede tocar la de otra cuenta, nadie puede desactivar la propia. `pages/admin/Users.jsx` →
+  `adminService.updateUserStatus`. Desactivar NO cierra la sesión ya abierta de esa cuenta por sí solo:
+  es una marca que el resto del código puede empezar a respetar si en el futuro se agrega un chequeo de
+  acceso basado en `activo` (no implementado todavía — ver ROADMAP.md).
 
 ## Flujo de trabajo de código
 
@@ -294,11 +386,14 @@ mi lista, historial) y el perfil del usuario.
   `components/ui/Modal.jsx` (v1.1, Headless UI `Dialog` + Framer Motion, mismo patrón de `static` +
   `AnimatePresence`) es, del mismo modo, el único componente de modal del proyecto — usarlo para
   cualquier diálogo nuevo en vez de crear uno ad hoc. Dependencia: `@headlessui/react` (ya instalada).
-- `AnimeCard` ya no tiene un botón "Ver detalles" visible — el hover revela solo tres íconos (Ver/
-  Favoritos/Información) sin fondo ni caja; el bloque de título es siempre un link (para que funcione sin
-  hover en táctil). No reintroducir un botón de texto sobre la card. El ícono de Favoritos exige sesión
-  (redirige a `/iniciar-sesion` si no hay usuario); "Mi Lista" no vive en la card compacta, solo en
-  Hero/AnimeDetail (ver sección Autenticación).
+- `AnimeCard` ya no tiene un botón "Ver detalles" visible. Desde v1.4, la card entera es un único `Link`
+  de cobertura total (`absolute inset-0`), siempre activo — no depende de `:hover` (ver "Sprint móvil" en
+  Notas técnicas para el bug real que esto corrige). Play/Información son decorativos, solo refuerzo
+  visual en hover de escritorio. El ícono de Favoritos es un botón siempre visible (no gateado por hover,
+  para ser alcanzable por touch) en la esquina superior derecha, y exige sesión (redirige a
+  `/iniciar-sesion` si no hay usuario); "Mi Lista" no vive en la card compacta, solo en Hero/AnimeDetail
+  (ver sección Autenticación). No reintroducir un botón de texto sobre la card, ni volver a poner el
+  destino de navegación detrás de un overlay gateado por hover.
 - `eslint.config.js` existe desde el Sprint 3.6 (antes no había ninguno y `npm run lint` fallaba en
   silencio) — usa `eslint-plugin-react`/`react-hooks`/`react-refresh`. Los archivos que corren en Node
   en vez de navegador (p. ej. `vite.config.js`) tienen su propio bloque de `globals` en ese archivo.
@@ -316,18 +411,18 @@ mi lista, historial) y el perfil del usuario.
 - **Supabase (v0.9):** implementado para auth y datos de usuario (ver sección Autenticación). El
   catálogo de anime en sí (`animeService.js`) sigue siendo 100% Jikan — Supabase no reemplaza esa capa,
   solo la complementa con lo que Jikan no puede dar (cuentas, listas persistentes, historial).
-- **Panel de Administrador (v0.10):** implementada la arquitectura, navegación y diseño visual — **sin
-  CRUD todavía** (pedido explícito). `layout/admin/AdminLayout.jsx` (+ `AdminSidebar`/`AdminHeader`) es un
-  shell propio, sin Navbar/Footer públicos; el sidebar filtra sus ítems por rol (`Usuarios` y
-  `Configuración` solo para `admin`). Componentes reutilizables en `components/admin/`: `StatCard`,
-  `DataTable` (tabla base con loading/error/empty), `TableToolbar` (búsqueda + filtros),
-  `AdminPageHeader`. `services/adminService.js` trae datos reales de Supabase donde ya hay una policy de
-  SELECT pública-para-autenticados (`profiles` → Usuarios/Dashboard, `comments` → Comentarios); Animes y
-  Temporadas reutilizan `animeService.js` (Jikan, igual que Explorar). Episodios/Personajes/Estudios/
-  Noticias no tienen fuente de datos real todavía (Jikan solo da episodios/personajes por anime, no un
-  listado global; Estudios y Noticias necesitarían una tabla propia) — se dejaron con la tabla armada y
-  un `EmptyState` explicando por qué, no con contenido inventado. No agregar botones de crear/editar/
-  eliminar reales en estas vistas sin que se pida explícitamente (ver ROADMAP.md).
+- **Panel de Administrador (v0.10):** arquitectura, navegación y diseño visual. `layout/admin/
+  AdminLayout.jsx` (+ `AdminSidebar`/`AdminHeader`) es un shell propio, sin Navbar/Footer públicos; el
+  sidebar filtra sus ítems por rol (`Usuarios` y `Configuración` solo para `admin`). Componentes
+  reutilizables en `components/admin/`: `StatCard`, `DataTable` (tabla base con loading/error/empty),
+  `TableToolbar` (búsqueda + filtros), `AdminPageHeader`, y desde v1.0 también `ConfirmDialog` (confirmar
+  acciones destructivas sin `window.confirm()`). `services/adminService.js` trae datos reales de
+  Supabase; Animes y Temporadas reutilizan `animeService.js` (Jikan, igual que Explorar). Episodios/
+  Personajes/Estudios no tienen fuente de datos real todavía (Jikan solo da episodios/personajes por
+  anime, no un listado global; Estudios necesitaría una tabla propia) — se dejaron con la tabla armada y
+  un `EmptyState` explicando por qué, no con contenido inventado. Noticias sí tiene fuente real desde
+  v1.0 (ver más abajo). No agregar botones de crear/editar/eliminar reales en Episodios/Personajes/
+  Estudios/Configuración sin que se pida explícitamente (ver ROADMAP.md).
 - **Perfiles múltiples (v1.1):** ver sección Autenticación para el detalle de perfiles/roles/avatares.
   `AccountMenu.jsx` (Navbar) muestra avatar + nombre + rol del perfil activo directamente en el botón
   (antes solo un círculo con iniciales de la cuenta) y su menú incluye Mi Perfil/Cambiar Perfil/Mi
@@ -347,6 +442,100 @@ mi lista, historial) y el perfil del usuario.
   fuera de `NAV_LINKS` a propósito (no estaba en la lista pedida), su ruta sigue viva. Rol `SUPER_ADMIN` +
   Panel de Gestión de Usuarios (`pages/admin/Users.jsx`, gated por `ROLE_MANAGEMENT_ROLES`) para cambiar
   el rol de cualquier cuenta salvo la propia — ver sección Autenticación para el detalle completo.
+- **v1.0 — Landing rediseñada, flujo de perfiles corregido, temas, primer CRUD real:** `Landing.jsx`
+  reescrita con menos texto y más contenido visual/animado (componente `Reveal` compartido, blobs
+  animados, secciones condensadas — ver ROADMAP.md para el detalle sección por sección). El selector de
+  perfiles (`ProfileSelect.jsx`) fue rediseñado (fondo animado, efecto vidrio, transición real al
+  seleccionar) y su bug de "reaparece en cada refresh" quedó corregido (ver "Perfiles múltiples" en
+  Autenticación). Sistema de temas de 7 paletas (ver "Sistema de temas" en Autenticación). Primer CRUD
+  real del Panel (Noticias) y primeras acciones reales de moderación (activar/desactivar cuenta, eliminar
+  comentario) — ver esas entradas en Autenticación. Se corrigió, de paso, un bug real de RLS que llevaba
+  desde v1.3 impidiendo en silencio que `updateUserRole` afectara cuentas ajenas (ver "Roles" en
+  Autenticación, migraciones 0017/0018) — cualquier acción nueva de staff sobre una fila ajena debe
+  revisar si necesita su propia policy de RLS, no asumir que el trigger de validación alcanza.
+- **v1.4 — Sprint móvil (responsive, gestos táctiles, PWA), sin funciones nuevas:** todo el trabajo es
+  CSS-first (clases Tailwind por breakpoint), sin detección de viewport por JS salvo una única excepción
+  justificada (`Modal.jsx`, ver abajo).
+  - **Bug real corregido (el motivo de "en iPhone a veces no abre el anime"):** `AnimeCard.jsx` tenía el
+    único destino de navegación dentro de un overlay que solo aparecía con `group-hover:opacity-100` — en
+    iOS Safari el primer tap dispara `:hover` en vez del click, así que "revelaba" los íconos en vez de
+    navegar, y la mayor parte del póster no tenía ningún handler. Ahora la card entera es un único `Link`
+    de cobertura total (`absolute inset-0`), siempre activo, sin depender de hover; Play/Información pasan
+    a ser decorativos (`pointer-events-none`, solo refuerzo visual en hover de escritorio); Favoritos es un
+    botón siempre visible (no gateado por hover) en la esquina superior derecha, para ser alcanzable por
+    touch — se mantiene como hermano del Link (no anidado dentro de un `<a>`, HTML inválido).
+  - **Bug real corregido (desborde horizontal):** `NavbarSearch.jsx` expandía a un ancho fijo de 300px
+    (más un dropdown `w-80`) que no entraba en los ~288px de contenido real de un viewport de 320-375px.
+    Por debajo de `md` ahora abre un overlay de búsqueda a pantalla completa (`fixed inset-0`) en vez de
+    expandirse en el header; a `md`+ el comportamiento no cambió.
+  - **Bug real corregido (auto-zoom de Safari iOS):** `FormField.jsx` no fijaba `font-size` en el
+    `<input>` — heredaba `text-sm` (14px) del label, por debajo del umbral de 16px que dispara el zoom
+    automático al enfocar un input en Safari iOS. Ahora es `text-base` en mobile / `sm:text-sm` en
+    desktop — corrige los 6 formularios que comparten este componente (Login/Registro/Recuperar/
+    Restablecer/Perfil/Configuración) de una sola vez.
+  - **Hero (`Hero.jsx`):** el poster, antes `hidden` por completo debajo de 640px, ahora es visible en
+    todos los tamaños (ya estaba primero en el orden del DOM, así que "poster arriba, información debajo"
+    no necesitó ningún `order-*`). Título con `line-clamp-2`; sinopsis con `line-clamp-4 sm:line-clamp-none`
+    (se mantiene el recorte a 280 caracteres existente como límite adicional). Botones apilados a ancho
+    completo en mobile (`flex-col` + `w-full sm:w-auto` por botón), `size="lg"` ya cumplía 44px.
+  - **Panel de Administrador — `DataTable.jsx` deja de forzar scroll horizontal:** por debajo de `md`
+    (768px) ya no renderiza un `<table>` (que forzaba `min-w-[560px]`) — pasa a un listado de tarjetas,
+    misma prop `columns` de siempre (columna `actions` se separa a un pie de tarjeta a ancho completo;
+    una columna con `label` vacío —p. ej. un thumbnail de póster en Animes/Temporadas— se muestra sin
+    etiqueta). Ninguna página de `pages/admin/*` necesitó tocarse más allá de agrandar sus propios
+    botones de acción a 44px (News/Users/Comments) — la prop API de `DataTable` no cambió.
+  - **`Modal.jsx` — bottom sheet en mobile:** por debajo de `sm` entra deslizando desde abajo, ancho
+    completo, esquinas superiores redondeadas, respeta `env(safe-area-inset-bottom)` (home indicator de
+    iOS); a `sm`+ mantiene la caja centrada de siempre. Única excepción de este sprint a "CSS-first": la
+    dirección de la animación de Framer Motion (slide-desde-abajo vs. scale+fade centrado) sí depende de
+    JS (`matchMedia('(min-width: 640px)')` con listener a `change`) porque las props de animación de
+    Framer Motion no son responsive vía clases — duplicar el `DialogPanel` en dos bloques CSS-condicionados
+    habría arriesgado dos instancias de foco/ARIA de modal activas a la vez. Resuelve de una sola vez el
+    editor de avatar, `NewsFormModal`, `ProfileFormModal` y `ConfirmDialog` (todos usan este `Modal`).
+  - **Touch targets ≥44×44px:** auditoría dirigida (no un rediseño de `Button` completo) — bump puntual en
+    botón hamburguesa y trigger de búsqueda del Navbar, avatar-trigger de `AccountMenu`, íconos sociales
+    del Footer, cierre del drawer de `AdminSidebar`/hamburguesa de `AdminHeader`, cierre de `Modal`,
+    íconos de acción por fila en News/Users/Comments, swatches de color y tabs de `AvatarPicker.jsx`,
+    flechas de `Pagination.jsx`, chips de relacionados en `AnimeDetail.jsx`. Además, `Button.jsx` size
+    `md` (el tamaño por defecto, usado por los CTAs primarios de Login/Registro/Recuperar/Restablecer/
+    Perfil) pasó de ~40px a 44px (`py-2.5` → `py-3`) — `sm`/`lg` no se tocaron a propósito, para no
+    agrandar chips/botones compactos que no lo necesitan.
+  - **Safe-area (notch/Dynamic Island/home indicator):** `viewport-fit=cover` agregado al meta viewport;
+    dos utilidades nuevas en `index.css` (`.safe-top`/`.safe-bottom`, cada una solo `env(safe-area-inset-*)`
+    sin valor base) aplicadas al elemento EXTERIOR que ya tiene su propio padding visual (header del
+    Navbar, overlay de búsqueda mobile, drawer de `AdminSidebar`, header del panel admin, bottom-sheet de
+    `Modal` vía `calc()` explícito ahí en vez de la clase, porque en ese caso comparte el mismo `p-6` que
+    el padding visual) — nunca se combinan en el mismo elemento que ya tiene un padding de Tailwind para
+    esa misma propiedad (`padding-top`/`padding-bottom`), porque una pisaría a la otra en vez de sumarse.
+  - **Red de seguridad contra scroll horizontal:** `overflow-x: hidden` agregado a `html, body` en
+    `index.css` — no afecta el scroll horizontal intencional de `MovieRow`/`DataTable` (contenido en sus
+    propios wrappers `overflow-x-auto`).
+  - **PWA:** `vite-plugin-pwa` (+ `@vite-pwa/assets-generator` como devDependency, usado una sola vez vía
+    `npx pwa-assets-generator` con `pwa-assets.config.js` para generar `favicon.ico`/
+    `apple-touch-icon-180x180.png`/`pwa-{64,192,512}.png`/`maskable-icon-512x512.png` a partir del
+    `favicon.svg` real existente — no se fabricó ningún ícono a mano). Manifest generado en
+    `vite.config.js` (`name`/`short_name`/`theme_color`/`background_color`: `#07111F` — Background, no
+    Primary, confirmado con el usuario — `display: 'standalone'`). `index.html` suma
+    `apple-mobile-web-app-capable`/`apple-mobile-web-app-status-bar-style`/`apple-mobile-web-app-title`
+    (Safari iOS no lee `manifest.display`, necesita sus propias meta tags para abrir en modo standalone).
+    `vercel.json` agrega un `headers` para `sw.js`/`manifest.webmanifest` con cache-control corto, para
+    que las actualizaciones no queden cacheadas de forma agresiva.
+  - **No implementado (fuera de alcance a propósito):** ningún ícono/splash se ilustró a mano — todos
+    salen del `favicon.svg` real vía el generador; no se rediseñó el logo para el "safe zone" de íconos
+    maskable (el fondo casi cubre el canvas completo) — puede recortarse un poco raro en launchers que
+    apliquen máscara circular, aceptable por ahora, no bloqueante. Auditoría de contraste de color no se
+    rehizo desde cero (la paleta ya documentada en CLAUDE.md se dio por buena).
+- **v1.5 — Sistema de perfiles definitivo:** ver la sección "Perfiles múltiples por cuenta" en
+  Autenticación para el detalle completo. En corto: máximo 4 perfiles por cuenta (validado en el
+  frontend y, de verdad, con un trigger en Supabase); Editar/Eliminar ahora disponibles desde cualquier
+  tarjeta del selector (`ProfileSelect.jsx`), no solo para el perfil activo vía "Mi Perfil"; eliminar un
+  perfil pasa por confirmación real (`ConfirmDialog`, reubicado de `components/admin/` a `components/ui/`
+  por ser agnóstico de dominio) y está protegido en la base contra eliminar el único perfil restante o el
+  que tiene rol elevado; nuevo campo "Fondo" (gradientes CSS, acento decorativo, no reemplaza el sistema
+  de Temas) editable junto con Tema desde el propio modal de crear/editar perfil. **Cambio de arquitectura
+  confirmado con el usuario, revirtiendo una decisión de v1.1:** Favoritos/Mi Lista/Historial pasaron de
+  ser por cuenta a ser por perfil (migración 0021) — cada perfil tiene su propia lista, que se borra de
+  verdad al eliminar su perfil. Migraciones 0019-0021.
 
 ## Objetivo final
 

@@ -1,12 +1,14 @@
 import { createContext, useContext, useMemo } from 'react'
 import { useAuth } from '@/hooks/useAuth'
+import { useProfile } from '@/hooks/useProfile'
 import { useUserCollection } from '@/hooks/useUserCollection'
 import { addFavorite, listFavorites, removeFavorite } from '@/services/favoritesService'
 
 const FavoritesContext = createContext(null)
 
 /**
- * "Favoritos" (♥) — persistido en Supabase por usuario (tabla `favorites`).
+ * "Favoritos" (♥) — persistido en Supabase por PERFIL (tabla `favorites`,
+ * columna `profile_id` desde v1.5/migración 0021 — antes era por cuenta).
  * Distinto de "Mi Lista" (ver WatchLaterContext): favorito es "me gusta",
  * Mi Lista es "quiero verlo después". Requiere sesión — los componentes
  * que exponen el botón de favorito deben verificar useAuth().isAuthenticated
@@ -14,8 +16,10 @@ const FavoritesContext = createContext(null)
  */
 export function FavoritesProvider({ children }) {
   const { user } = useAuth()
+  const { activeProfile } = useProfile()
   const { items, isSaved, toggle, loading } = useUserCollection({
-    userId: user?.id ?? null,
+    accountId: user?.id ?? null,
+    profileId: activeProfile?.id ?? null,
     list: listFavorites,
     add: addFavorite,
     remove: removeFavorite,

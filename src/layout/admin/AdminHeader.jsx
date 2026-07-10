@@ -5,12 +5,12 @@ import AccountMenu from '@/layout/AccountMenu'
 // nombre + rol del perfil activo) — repetirlo aquí sería redundante.
 function AdminHeader({ onOpenMobileMenu }) {
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-border bg-background/80 px-4 backdrop-blur-xl sm:px-6">
+    <header className="safe-top sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-border bg-background/80 px-4 backdrop-blur-xl sm:px-6">
       <button
         type="button"
         aria-label="Abrir menú"
         onClick={onOpenMobileMenu}
-        className="rounded-full p-2 text-text-secondary transition-colors hover:bg-hover hover:text-text md:hidden"
+        className="flex min-h-11 min-w-11 items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-hover hover:text-text md:hidden"
       >
         <Menu size={20} />
       </button>

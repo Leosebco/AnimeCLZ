@@ -172,6 +172,60 @@
 
 ---
 
+## v1.0 — Experiencia completa: Landing, perfiles, temas, animaciones y primer CRUD real
+
+- [x] Landing rediseñada: menos texto, más contenido visual/animado (`Reveal`, blobs animados en Hero, secciones condensadas).
+- [x] Bug real corregido: el selector de perfiles ya no reaparece en cada refresh (condición de carrera en `ProfileContext` + restauración desde `localStorage` unificadas).
+- [x] Umbral de inactividad real (30 min) con heartbeat — el selector solo vuelve a aparecer tras inactividad prolongada, login, cambio de cuenta o cierre de sesión.
+- [x] `clearActiveProfile()` conectado a los tres puntos reales de cierre de sesión (antes existía en el contexto pero nunca se invocaba).
+- [x] Selector de perfiles rediseñado: fondo animado, efecto vidrio, entrada escalonada, transición real al seleccionar.
+- [x] Sistema de temas: 7 paletas (`profiles_account.tema`, migración 0014) vía `data-theme` + `ThemeContext`/`useTheme()`; picker real en Configuración, persistido en Supabase.
+- [x] Primer CRUD real del Panel: Noticias (tabla `news`, migración 0015; `newsService.js`; `NewsFormModal`; `ConfirmDialog` nuevo y reutilizable; crear/editar/eliminar/buscar/paginar).
+- [x] Usuarios: activar/desactivar cuenta (`profiles.activo`, migración 0016; solo `super_admin`; no aplicable a la propia cuenta).
+- [x] Comentarios: eliminar (moderación real, ya no solo lectura).
+- [x] Bug real corregido: la policy de `UPDATE` de `profiles` y la de `DELETE` de `comments` solo permitían filas propias — RLS bloqueaba en silencio (0 filas afectadas, sin error) cualquier acción de staff sobre cuentas/comentarios ajenos, incluyendo `updateUserRole` que ya estaba en producción desde v1.3. Corregido con migraciones 0017/0018, verificado en vivo.
+- [ ] CRUD de Animes/Temporadas/Episodios/Personajes/Estudios — fuera de alcance a propósito (Jikan es de solo lectura, no hay espejo local de esos datos).
+- [ ] CRUD de Configuración del panel (`/admin/configuracion`) — sigue sin tabla ni lógica.
+- [ ] Integración de Estudios con `/producers` de Jikan — seguía pendiente desde v0.10, no se tocó en esta pasada.
+- [x] Favoritos/Mi Lista/Historial por perfil — decisión de alcance de v1.1 revertida en v1.5 (ver esa sección).
+
+---
+
+## v1.4 — Sprint móvil: responsive, gestos táctiles y PWA
+
+- [x] Bug real corregido: `AnimeCard` no abría el detalle de forma confiable en iPhone (destino de navegación gateado por `:hover`, que en iOS Safari requiere un primer tap solo para "revelar"). Ahora es un único `Link` de cobertura total, siempre activo.
+- [x] Bug real corregido: `NavbarSearch` desbordaba horizontalmente en 320-375px (ancho fijo de 300px + dropdown de 320px). Overlay de búsqueda a pantalla completa por debajo de `md`.
+- [x] Bug real corregido: auto-zoom de Safari iOS al enfocar inputs (`FormField` heredaba `text-sm`, por debajo del umbral de 16px) — corregido para los 6 formularios que comparten el componente.
+- [x] Bug real corregido: inconsistencia de breakpoint entre `Navbar` (`md`) y `AccountMenu` (`sm`) — unificado a `md`.
+- [x] Hero: poster visible en mobile (antes `hidden` por completo), título/sinopsis con `line-clamp`, botones apilados a ancho completo.
+- [x] Panel de Administrador: `DataTable` se convierte en tarjetas por debajo de 768px (sin scroll horizontal); ninguna página necesitó cambios.
+- [x] `Modal` se comporta como bottom sheet en mobile (editor de avatar, Noticias, Perfil, confirmaciones) — respeta el safe-area del home indicator de iOS.
+- [x] Touch targets ≥44×44px: Navbar, AccountMenu, Footer, Admin (sidebar/header/acciones de fila), Modal, AvatarPicker, Pagination, chips de relacionados en AnimeDetail, tamaño `md` de `Button`.
+- [x] Safe-area completo: `viewport-fit=cover`, utilidades `.safe-top`/`.safe-bottom`, compatibilidad con notch/Dynamic Island.
+- [x] Red de seguridad `overflow-x: hidden` en `html, body` contra scroll horizontal accidental.
+- [x] PWA completa: `vite-plugin-pwa`, manifest, `favicon.ico`/apple-touch-icon/íconos PWA/maskable generados desde el favicon real (`@vite-pwa/assets-generator`), meta tags de Apple, service worker con precache, instalable en Android e iPhone.
+- [ ] Rediseño del logo para el "safe zone" de íconos maskable — el actual puede recortarse un poco en launchers con máscara circular; no bloqueante.
+- [ ] Auditoría de contraste de color dedicada — no se rehizo desde cero en esta pasada.
+
+---
+
+## v1.5 — Sistema de perfiles definitivo
+
+- [x] Máximo 4 perfiles por cuenta (`MAX_PROFILES`) — validado en frontend y con trigger real en Supabase (`enforce_max_profiles`, migración 0019).
+- [x] Protección real de borrado: no se puede eliminar el único perfil restante ni el que tiene rol elevado (`protect_profile_account_deletion`, migración 0019) — antes solo la UI lo evitaba.
+- [x] Confirmación real antes de eliminar un perfil (`ConfirmDialog`) — antes `Profile.jsx` borraba al primer click, sin ningún aviso.
+- [x] Editar/Eliminar disponibles desde cualquier tarjeta del selector (`ProfileSelect.jsx`), no solo desde "Mi Perfil" para el activo — siempre visibles, no gateados por hover (lección del sprint móvil).
+- [x] "Fondo" del perfil — nuevo campo (migración 0020), acento decorativo (no reemplaza el sistema de Temas), gradientes CSS con nombres inspirados en anime.
+- [x] Tema y Fondo editables desde el propio modal de crear/editar perfil (`ThemePickerGrid.jsx`/`BackgroundPickerGrid.jsx`, nuevos) — antes Tema solo se cambiaba desde Configuración para el perfil activo.
+- [x] Bug real corregido: `sync_default_profile_rol` no filtraba perfiles desactivados al buscar "el perfil más antiguo" — corregido defensivamente.
+- [x] Cambio de arquitectura confirmado con el usuario: Favoritos/Mi Lista/Historial pasan de ser por cuenta a ser por perfil (migración 0021, `profile_id` en las 3 tablas) — revierte la decisión de v1.1. Se borran de verdad al eliminar el perfil dueño (`cleanup_profile_data`, misma migración).
+- [x] Políticas de INSERT/UPDATE de `favorites`/`watch_later`/`watch_history` reforzadas para verificar que el `profile_id` enviado pertenece de verdad a la cuenta autenticada (antes solo se validaba `user_id`).
+- [x] `ConfirmDialog.jsx` reubicado de `components/admin/` a `components/ui/` (agnóstico de dominio, ya lo necesitan páginas públicas).
+- [ ] Eliminar un perfil no borra nada de `comments` — fuera de alcance a propósito (sin autoría por perfil, sin interfaz pública para crear comentarios todavía).
+- [ ] Transferir el rol administrativo a otro perfil antes de eliminar el que lo tiene — no existe ese flujo, el trigger solo bloquea el borrado.
+
+---
+
 ## Sprint 4 (superado por v0.9 — hecho con Supabase, no Firebase)
 
 - [x] ~~Firebase~~ → Supabase. Ver v0.9.

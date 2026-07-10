@@ -4,7 +4,8 @@ import { devError } from '@/utils/logger'
 const GENERIC_ERROR = 'No pudimos cargar los perfiles de esta cuenta. Inténtalo nuevamente.'
 const SAVE_ERROR = 'No pudimos guardar el perfil. Inténtalo nuevamente.'
 
-const COLUMNS = 'id, account_id, nombre, avatar, tipo_avatar, color, rol, activo, fecha_creacion, fecha_actualizacion'
+const COLUMNS =
+  'id, account_id, nombre, avatar, tipo_avatar, color, rol, tema, fondo, activo, fecha_creacion, fecha_actualizacion'
 
 function fromRow(row) {
   return {
@@ -15,6 +16,8 @@ function fromRow(row) {
     tipoAvatar: row.tipo_avatar,
     color: row.color,
     rol: row.rol,
+    tema: row.tema,
+    fondo: row.fondo,
     activo: row.activo,
     fechaCreacion: row.fecha_creacion,
     fechaActualizacion: row.fecha_actualizacion,
@@ -48,25 +51,33 @@ export async function listProfiles(accountId) {
   return data.map(fromRow)
 }
 
-export async function createProfile(accountId, { nombre, avatar, tipoAvatar, color }) {
+export async function createProfile(accountId, { nombre, avatar, tipoAvatar, color, tema, fondo }) {
   if (!isSupabaseConfigured) throw new Error(SAVE_ERROR)
   const { data, error } = await supabase
     .from('profiles_account')
-    .insert({ account_id: accountId, nombre, avatar, tipo_avatar: tipoAvatar, color })
+    .insert({ account_id: accountId, nombre, avatar, tipo_avatar: tipoAvatar, color, tema, fondo })
     .select(COLUMNS)
     .single()
   if (error) {
     devError('[profilesAccountService.createProfile] Supabase error:', error)
-    throw new Error(SAVE_ERROR)
+    // A diferencia del resto de servicios, acá el mensaje real de Postgres
+    // sí se muestra (no uno genérico): el trigger `enforce_max_profiles`
+    // (migración 0019) lanza un mensaje ya amable en español ("Una cuenta
+    // puede tener hasta 4 perfiles.") — perderlo detrás de un genérico
+    // dejaría al usuario sin saber por qué falló.
+    throw new Error(error.message || SAVE_ERROR)
   }
   return fromRow(data)
 }
 
-export async function updateProfile(id, { nombre, avatar, tipoAvatar, color }) {
+// `tema`/`fondo` son opcionales — ThemeContext llama a esto con solo
+// `{ tema }` al cambiar de paleta; los campos no presentes en el objeto no
+// se tocan (Supabase solo actualiza las columnas incluidas en el payload).
+export async function updateProfile(id, { nombre, avatar, tipoAvatar, color, tema, fondo }) {
   if (!isSupabaseConfigured) throw new Error(SAVE_ERROR)
   const { data, error } = await supabase
     .from('profiles_account')
-    .update({ nombre, avatar, tipo_avatar: tipoAvatar, color })
+    .update({ nombre, avatar, tipo_avatar: tipoAvatar, color, tema, fondo })
     .eq('id', id)
     .select(COLUMNS)
     .single()
@@ -79,12 +90,16 @@ export async function updateProfile(id, { nombre, avatar, tipoAvatar, color }) {
 
 // Baja lógica (activo = false) en vez de DELETE: más simple de revertir y
 // no exige tocar las políticas de borrado en cascada de otras tablas que
-// en el futuro puedan referenciar un perfil.
+// en el futuro puedan referenciar un perfil. El trigger
+// `protect_profile_account_deletion` (migración 0019) bloquea eliminar el
+// único perfil activo o el que tiene rol elevado, con un mensaje ya amable
+// en español — igual que en createProfile, se muestra tal cual en vez de
+// un genérico.
 export async function deactivateProfile(id) {
   if (!isSupabaseConfigured) throw new Error(SAVE_ERROR)
   const { error } = await supabase.from('profiles_account').update({ activo: false }).eq('id', id)
   if (error) {
     devError('[profilesAccountService.deactivateProfile] Supabase error:', error)
-    throw new Error('No pudimos eliminar el perfil. Inténtalo nuevamente.')
+    throw new Error(error.message || 'No pudimos eliminar el perfil. Inténtalo nuevamente.')
   }
 }

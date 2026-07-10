@@ -1,12 +1,13 @@
 import { useState } from 'react'
-import { Loader2 } from 'lucide-react'
+import { Loader2, ShieldOff, ShieldCheck } from 'lucide-react'
 import AdminPageHeader from '@/components/admin/AdminPageHeader'
 import TableToolbar from '@/components/admin/TableToolbar'
 import DataTable from '@/components/admin/DataTable'
+import ConfirmDialog from '@/components/ui/ConfirmDialog'
 import Select from '@/components/ui/Select'
 import Pagination from '@/components/catalog/Pagination'
 import useFetch from '@/hooks/useFetch'
-import { listUsers, updateUserRole } from '@/services/adminService'
+import { listUsers, updateUserRole, updateUserStatus } from '@/services/adminService'
 import { useAuth } from '@/hooks/useAuth'
 import { useProfile } from '@/hooks/useProfile'
 import { ASSIGNABLE_ROLES, ROLE_LABELS, ROLE_MANAGEMENT_ROLES } from '@/constants'
@@ -36,6 +37,8 @@ function Users() {
   const [page, setPage] = useState(1)
   const [savingUserId, setSavingUserId] = useState(null)
   const [roleError, setRoleError] = useState(null)
+  const [statusTarget, setStatusTarget] = useState(null)
+  const [statusError, setStatusError] = useState(null)
 
   const { data, loading, error, refetch } = useFetch(
     () => listUsers({ page, search, role }),
@@ -67,6 +70,17 @@ function Users() {
       setRoleError(err.message)
     } finally {
       setSavingUserId(null)
+    }
+  }
+
+  const handleStatusToggle = async () => {
+    setStatusError(null)
+    try {
+      await updateUserStatus(statusTarget.user_id, !statusTarget.activo)
+      refetch()
+    } catch (err) {
+      setStatusError(err.message)
+      throw err
     }
   }
 
@@ -111,6 +125,43 @@ function Users() {
       label: 'Registrado',
       render: (row) => new Date(row.created_at).toLocaleDateString('es-419'),
     },
+    {
+      key: 'activo',
+      label: 'Estado',
+      render: (row) => (
+        <span
+          className={
+            row.activo
+              ? 'rounded-full bg-primary/15 px-2.5 py-1 text-xs font-medium text-primary'
+              : 'rounded-full bg-error/15 px-2.5 py-1 text-xs font-medium text-error'
+          }
+        >
+          {row.activo ? 'Activa' : 'Desactivada'}
+        </span>
+      ),
+    },
+    ...(canManageRoles
+      ? [
+          {
+            key: 'actions',
+            label: '',
+            render: (row) => {
+              const isOwnAccount = row.user_id === user?.id
+              if (isOwnAccount) return null
+              return (
+                <button
+                  type="button"
+                  onClick={() => setStatusTarget(row)}
+                  aria-label={row.activo ? `Desactivar ${row.username || 'usuario'}` : `Activar ${row.username || 'usuario'}`}
+                  className="flex min-h-11 min-w-11 items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-hover hover:text-text"
+                >
+                  {row.activo ? <ShieldOff size={15} /> : <ShieldCheck size={15} />}
+                </button>
+              )
+            },
+          },
+        ]
+      : []),
   ]
 
   return (
@@ -136,9 +187,9 @@ function Users() {
         }
       />
 
-      {roleError && (
+      {(roleError || statusError) && (
         <p role="alert" className="text-sm text-error">
-          {roleError}
+          {roleError || statusError}
         </p>
       )}
 
@@ -158,6 +209,20 @@ function Users() {
       {!loading && !error && data?.data?.length > 0 && (
         <Pagination page={page} hasNextPage={hasNextPage} onChange={setPage} />
       )}
+
+      <ConfirmDialog
+        open={Boolean(statusTarget)}
+        onClose={() => setStatusTarget(null)}
+        onConfirm={handleStatusToggle}
+        title={statusTarget?.activo ? 'Desactivar cuenta' : 'Activar cuenta'}
+        description={
+          statusTarget?.activo
+            ? `¿Desactivar la cuenta de "${statusTarget?.username || 'este usuario'}"?`
+            : `¿Reactivar la cuenta de "${statusTarget?.username || 'este usuario'}"?`
+        }
+        confirmLabel={statusTarget?.activo ? 'Desactivar' : 'Activar'}
+        danger={Boolean(statusTarget?.activo)}
+      />
     </div>
   )
 }

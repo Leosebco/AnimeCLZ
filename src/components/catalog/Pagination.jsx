@@ -2,7 +2,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { cn } from '@/utils/cn'
 
 const arrowClass = cn(
-  'flex h-10 w-10 items-center justify-center rounded-full border border-border text-text transition-colors hover:border-primary/60 hover:bg-hover disabled:opacity-40 disabled:pointer-events-none',
+  'flex h-11 w-11 items-center justify-center rounded-full border border-border text-text transition-colors hover:border-primary/60 hover:bg-hover disabled:opacity-40 disabled:pointer-events-none',
 )
 
 function Pagination({ page, hasNextPage, onChange }) {

@@ -4,6 +4,8 @@ import Modal from '@/components/ui/Modal'
 import Button from '@/components/ui/Button'
 import FormField from '@/components/ui/FormField'
 import AvatarPicker from './AvatarPicker'
+import ThemePickerGrid from './ThemePickerGrid'
+import BackgroundPickerGrid from './BackgroundPickerGrid'
 import { AVATAR_TYPES, PROFILE_COLORS } from '@/constants'
 
 const EMPTY_VALUE = {
@@ -11,13 +13,18 @@ const EMPTY_VALUE = {
   avatar: null,
   tipoAvatar: AVATAR_TYPES.INITIAL,
   color: PROFILE_COLORS[0],
+  tema: 'original',
+  fondo: 'none',
 }
 
 /**
- * Formulario de Crear/Editar perfil (Nombre, Color, Avatar) — usado desde
- * el selector de perfiles ("+ Crear Perfil") y desde Mi Perfil ("Editar").
- * Nunca envía `rol`: los perfiles nuevos siempre nacen 'usuario'
- * (profilesAccountService lo impone del lado del servicio y la DB).
+ * Formulario de Crear/Editar perfil (Nombre, Avatar, Tema, Fondo) — usado
+ * desde el selector de perfiles ("+ Crear Perfil" y "Editar" por tarjeta) y
+ * desde Mi Perfil ("Editar"). Nunca envía `rol`: los perfiles nuevos
+ * siempre nacen 'usuario' (profilesAccountService lo impone del lado del
+ * servicio y la DB). Tema/Fondo son estado de formulario local — no se
+ * aplican en vivo (a diferencia del picker de Settings.jsx), porque este
+ * modal puede estar editando un perfil que no es el activo.
  */
 function ProfileFormModal({ open, onClose, accountId, initialValue, onSubmit, title }) {
   const [form, setForm] = useState(initialValue || EMPTY_VALUE)
@@ -65,6 +72,13 @@ function ProfileFormModal({ open, onClose, accountId, initialValue, onSubmit, ti
           maxLength={30}
           value={form.nombre}
           onChange={(event) => setForm((prev) => ({ ...prev, nombre: event.target.value }))}
+        />
+
+        <ThemePickerGrid value={form.tema} onChange={(tema) => setForm((prev) => ({ ...prev, tema }))} />
+
+        <BackgroundPickerGrid
+          value={form.fondo}
+          onChange={(fondo) => setForm((prev) => ({ ...prev, fondo }))}
         />
 
         {error && (

@@ -32,30 +32,39 @@ function fromRow(row) {
  * Factory compartida por favoritesService y watchLaterService: mismo shape
  * de tabla (mal_id + foto de campos de mapAnime), mismas reglas de RLS,
  * solo cambia el nombre de la tabla en Supabase.
+ *
+ * v1.5: el scope real pasó de ser por CUENTA (`user_id`) a ser por PERFIL
+ * (`profile_id`, migración 0021) — cada perfil de una misma cuenta tiene su
+ * propia lista, y se borra de verdad cuando su perfil se elimina. `user_id`
+ * se sigue mandando en `add` (columna NOT NULL, y la policy de RLS todavía
+ * exige `auth.uid() = user_id`) pero ya no es lo que filtra `list`/`remove`.
  */
 export function createCollectionService(table) {
-  async function list(userId) {
-    if (!isSupabaseConfigured || !userId) return []
+  async function list(profileId) {
+    if (!isSupabaseConfigured || !profileId) return []
     const { data, error } = await supabase
       .from(table)
       .select('mal_id, title, poster, poster_small, type, year, score, status')
-      .eq('user_id', userId)
+      .eq('profile_id', profileId)
       .order('created_at', { ascending: false })
     if (error) throw new Error(GENERIC_ERROR)
     return data.map(fromRow)
   }
 
-  async function add(userId, anime) {
-    if (!isSupabaseConfigured || !userId) throw new Error(GENERIC_ERROR)
+  async function add(accountId, profileId, anime) {
+    if (!isSupabaseConfigured || !accountId || !profileId) throw new Error(GENERIC_ERROR)
     const { error } = await supabase
       .from(table)
-      .upsert({ user_id: userId, ...toRow(anime) }, { onConflict: 'user_id,mal_id' })
+      .upsert(
+        { user_id: accountId, profile_id: profileId, ...toRow(anime) },
+        { onConflict: 'profile_id,mal_id' },
+      )
     if (error) throw new Error(GENERIC_ERROR)
   }
 
-  async function remove(userId, malId) {
-    if (!isSupabaseConfigured || !userId) throw new Error(GENERIC_ERROR)
-    const { error } = await supabase.from(table).delete().eq('user_id', userId).eq('mal_id', malId)
+  async function remove(profileId, malId) {
+    if (!isSupabaseConfigured || !profileId) throw new Error(GENERIC_ERROR)
+    const { error } = await supabase.from(table).delete().eq('profile_id', profileId).eq('mal_id', malId)
     if (error) throw new Error(GENERIC_ERROR)
   }
 

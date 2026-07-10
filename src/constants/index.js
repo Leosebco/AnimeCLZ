@@ -80,12 +80,52 @@ export const PROFILE_COLORS = [
   '#14B8A6',
 ]
 
+// Sistema de temas (v1.0, migración 0014, columna profiles_account.tema).
+// Cada `id` coincide con un bloque `:root[data-theme="..."]` en
+// styles/index.css — ThemeContext solo pone/quita ese atributo en
+// <html>, el resto lo resuelve el CSS (todos los componentes ya usan los
+// tokens `bg-background`/`text-primary`/etc., nunca colores sueltos).
+// `original` es el tema por defecto y no necesita bloque propio (usa las
+// variables base de :root). `swatch` es solo para pintar el picker.
+export const THEMES = [
+  { id: 'original', label: 'AnimeCLZ Original', swatch: '#4F8CFF' },
+  { id: 'purple-night', label: 'Purple Night', swatch: '#9D6FFF' },
+  { id: 'ocean-blue', label: 'Ocean Blue', swatch: '#22B8CF' },
+  { id: 'sakura-pink', label: 'Sakura Pink', swatch: '#FF7AC6' },
+  { id: 'emerald', label: 'Emerald', swatch: '#22C58D' },
+  { id: 'sunset-orange', label: 'Sunset Orange', swatch: '#FF8A4C' },
+  { id: 'cyber-neon', label: 'Cyber Neon', swatch: '#00E5FF' },
+]
+
 // tipo_avatar de profiles_account.
 export const AVATAR_TYPES = {
   INITIAL: 'inicial',
   UPLOAD: 'subida',
   CHARACTER: 'personaje',
 }
+
+// Máximo de perfiles por cuenta (v1.5) — el trigger `enforce_max_profiles`
+// (migración 0019) es la validación real; esta constante solo permite que
+// el frontend rechace el intento antes de un round-trip.
+export const MAX_PROFILES = 4
+
+// "Fondo" del perfil (v1.5, migración 0020, columna profiles_account.fondo)
+// — acento decorativo detrás del avatar en el selector de perfiles y en el
+// encabezado de "Mi Perfil". Deliberadamente NO reemplaza el fondo de toda
+// la app (eso sigue siendo del sistema de Temas) — son gradientes CSS puros
+// con nombres inspirados en anime, nunca imágenes externas (no se fabrica/
+// licencia arte que no existe). `preview` es el `background-image` a usar
+// directamente en un `style`.
+export const PROFILE_BACKGROUNDS = [
+  { id: 'none', label: 'Sin fondo', preview: 'none' },
+  { id: 'sakura', label: 'Sakura', preview: 'linear-gradient(135deg, #ff9ec4, #ff5f9e)' },
+  { id: 'cyber-noche', label: 'Cyber Noche', preview: 'linear-gradient(135deg, #0f0c29, #00e5ff)' },
+  { id: 'fuego-shonen', label: 'Fuego Shonen', preview: 'linear-gradient(135deg, #ff6b35, #f7c948)' },
+  { id: 'oceano-ghibli', label: 'Océano Ghibli', preview: 'linear-gradient(135deg, #1e3c72, #2a5298)' },
+  { id: 'aurora-magica', label: 'Aurora Mágica', preview: 'linear-gradient(135deg, #7c5cff, #22c58d)' },
+  { id: 'bosque-encantado', label: 'Bosque Encantado', preview: 'linear-gradient(135deg, #134e13, #56ab2f)' },
+  { id: 'medianoche-estelar', label: 'Medianoche Estelar', preview: 'linear-gradient(135deg, #0f0f1a, #4f8cff)' },
+]
 
 export function animeDetailPath(id) {
   return `/anime/${id}`
@@ -114,7 +154,7 @@ export const NAV_LINKS = [
 // sección de Landing.jsx tiene un id que coincide con el hash de abajo).
 export const FOOTER_LINKS = {
   AnimeCLZ: [
-    { label: 'Acerca de', path: `${ROUTES.LANDING}#que-es` },
+    { label: 'Acerca de', path: `${ROUTES.LANDING}#caracteristicas` },
     { label: 'Tecnologías', path: `${ROUTES.LANDING}#tecnologias` },
     { label: 'Preguntas frecuentes', path: `${ROUTES.LANDING}#preguntas-frecuentes` },
   ],

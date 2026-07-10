@@ -30,7 +30,9 @@ function TableToolbar({
         />
       </div>
 
-      {filters && <div className="flex flex-wrap items-center gap-2">{filters}</div>}
+      {filters && (
+        <div className="flex flex-wrap items-center gap-2 [&>*]:w-full sm:[&>*]:w-auto">{filters}</div>
+      )}
     </div>
   )
 }

@@ -2,9 +2,19 @@
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon-180x180.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="description" content="AnimeCLZ — descubre, explora y guarda tu anime favorito con datos reales de MyAnimeList." />
+    <meta name="theme-color" content="#07111F" />
+
+    <!-- PWA / iOS: Safari no lee manifest.display, necesita estas meta
+         tags propias para abrir en modo standalone (sin barra de Safari)
+         al instalarse desde "Compartir → Agregar a inicio". -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="AnimeCLZ" />
     <title>AnimeCLZ</title>
 
     <!-- Display / body type system -->

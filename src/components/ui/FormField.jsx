@@ -13,7 +13,10 @@ const FormField = forwardRef(function FormField({ label, error, className, ...pr
       <input
         ref={ref}
         className={cn(
-          'w-full rounded-xl border border-border bg-background px-4 py-2.5 text-text placeholder:text-text-secondary transition-colors duration-200 focus-visible:border-primary focus-visible:outline-2 focus-visible:outline-primary',
+          // text-base (16px) en mobile evita el auto-zoom de Safari iOS al
+          // enfocar un input con font-size < 16px; sm:text-sm vuelve al
+          // tamaño visual de siempre en desktop.
+          'w-full rounded-xl border border-border bg-background px-4 py-2.5 text-base text-text placeholder:text-text-secondary transition-colors duration-200 focus-visible:border-primary focus-visible:outline-2 focus-visible:outline-primary sm:text-sm',
           error && 'border-error',
           className,
         )}

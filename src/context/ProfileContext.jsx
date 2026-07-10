@@ -6,11 +6,31 @@ import {
   listProfiles,
   updateProfile as updateProfileRequest,
 } from '@/services/profilesAccountService'
-import { AVATAR_TYPES, PROFILE_COLORS } from '@/constants'
+import { AVATAR_TYPES, MAX_PROFILES, PROFILE_COLORS } from '@/constants'
 import { devError, devLog } from '@/utils/logger'
+
+// 30 minutos sin actividad = sesión "inactiva" a efectos del selector de
+// perfiles (pedido explícito v1.0) — no del login de Supabase en sí, que
+// sigue viva mucho más tiempo (persistSession/autoRefreshToken).
+const ACTIVITY_TTL_MS = 30 * 60 * 1000
 
 function storageKey(accountId) {
   return `animeclz:activeProfile:${accountId}`
+}
+
+function activityKey(accountId) {
+  return `animeclz:lastActivity:${accountId}`
+}
+
+function touchActivity(accountId) {
+  if (accountId) localStorage.setItem(activityKey(accountId), String(Date.now()))
+}
+
+function isActivityFresh(accountId) {
+  const raw = localStorage.getItem(activityKey(accountId))
+  if (!raw) return false
+  const last = Number(raw)
+  return Number.isFinite(last) && Date.now() - last < ACTIVITY_TTL_MS
 }
 
 // El contexto vive aquí (no colocado con un hook useProfile() como
@@ -21,10 +41,16 @@ export const ProfileContext = createContext(null)
 
 /**
  * Perfiles múltiples por cuenta, estilo Netflix (ver migración 0009 y
- * profilesAccountService.js). El perfil activo se recuerda en localStorage
- * por cuenta, así que un usuario que ya eligió "Leonardo" no vuelve a ver
- * el selector en cada visita — solo al cerrar sesión o pedir "Cambiar
- * Perfil" explícitamente.
+ * profilesAccountService.js).
+ *
+ * El selector de perfiles NO debe aparecer en cada refresh (v1.0): se
+ * recuerda el último perfil elegido en localStorage por cuenta, y solo se
+ * vuelve a pedir cuando (a) es un login nuevo, (b) es otra cuenta, (c) se
+ * cerró sesión explícitamente (ver `clearActiveProfile` en los handlers de
+ * cerrar sesión), o (d) pasaron 30+ minutos sin actividad — `touchActivity`
+ * se llama al elegir perfil y en un heartbeat mientras la pestaña está
+ * visible, así que "inactivo" de verdad significa la pestaña en segundo
+ * plano/cerrada, no solo estar leyendo una ficha de anime un rato largo.
  */
 export function ProfileProvider({ children }) {
   const { user, profile: accountProfile } = useAuth()
@@ -45,10 +71,7 @@ export function ProfileProvider({ children }) {
   // incluido un simple refresh de token en segundo plano. Si esos objetos
   // fueran dependencias de fetchProfiles, el efecto de montaje de abajo
   // (que depende de fetchProfiles) se volvería a disparar en medio de la
-  // sesión y dispararía un listProfiles/createProfile DUPLICADO — la
-  // causa raíz real del "No pudimos cargar esta sección" intermitente en
-  // el selector de perfiles: dos llamadas corriendo en paralelo podían
-  // pisarse el estado final entre sí de forma no determinística.
+  // sesión y dispararía un listProfiles/createProfile DUPLICADO.
   const defaultNameRef = useRef('Mi Perfil')
   useEffect(() => {
     defaultNameRef.current = accountProfile?.username || user?.email?.split('@')[0] || 'Mi Perfil'
@@ -68,6 +91,7 @@ export function ProfileProvider({ children }) {
       const data = await listProfiles(accountId)
       devLog('[ProfileContext] listProfiles:', data)
 
+      let finalData = data
       if (data.length === 0) {
         // 0 filas no es un error: la cuenta existe pero, por la razón que
         // sea (el trigger de auto-creación no llegó a correr, un backfill
@@ -81,12 +105,33 @@ export function ProfileProvider({ children }) {
           color: PROFILE_COLORS[0],
         })
         devLog('[ProfileContext] perfil principal autocreado:', created)
-        setProfiles([created])
-        setActiveProfileId(created.id)
-        localStorage.setItem(storageKey(accountId), created.id)
-      } else {
-        setProfiles(data)
+        finalData = [created]
       }
+      setProfiles(finalData)
+
+      // Restaurar el último perfil elegido EN EL MISMO paso que resolvemos
+      // las filas (no en un useEffect separado que corre un tick después):
+      // hacerlo aparte dejaba una ventana de un render donde `loading` ya
+      // era `false` pero `activeProfileId` todavía no se había restaurado
+      // — Layout.jsx veía "hay sesión pero no hay perfil activo" en ese
+      // instante y redirigía al selector en CADA refresh de página, así
+      // hubiera un perfil recordado válido y reciente.
+      if (data.length === 0) {
+        // El único perfil recién creado se selecciona solo — no tiene
+        // sentido mostrarle el selector a alguien que no tenía ninguno.
+        setActiveProfileId(finalData[0].id)
+        touchActivity(accountId)
+        localStorage.setItem(storageKey(accountId), finalData[0].id)
+      } else if (isActivityFresh(accountId)) {
+        const remembered = localStorage.getItem(storageKey(accountId))
+        if (remembered && finalData.some((profile) => profile.id === remembered)) {
+          setActiveProfileId(remembered)
+        }
+      }
+      // Si la actividad no está "fresca" (30+ min sin uso) simplemente no
+      // se restaura nada — activeProfile queda en null y el selector se
+      // muestra, sin necesidad de borrar el recuerdo (se reutiliza en
+      // cuanto el usuario vuelva a elegir).
 
       setProfilesError(null)
       setProfilesFetchedFor(accountId)
@@ -105,37 +150,60 @@ export function ProfileProvider({ children }) {
     fetchProfiles()
   }, [accountId, fetchProfiles])
 
-  // Al resolver la lista de perfiles de esta cuenta, restaura el que se
-  // recordó la última vez (si sigue existiendo y activo).
+  // Heartbeat de actividad: mientras la pestaña esté visible y haya una
+  // cuenta activa, "tocar" la marca de tiempo cada minuto y al volver a
+  // foco — así 30 minutos "inactivo" refleja la pestaña en segundo plano
+  // o cerrada, no solo quedarse leyendo una página larga.
   useEffect(() => {
-    if (!accountId || profilesFetchedFor !== accountId) return
-    const remembered = localStorage.getItem(storageKey(accountId))
-    if (remembered && profiles.some((profile) => profile.id === remembered)) {
-      setActiveProfileId(remembered)
+    if (!accountId) return
+    touchActivity(accountId)
+
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') touchActivity(accountId)
+    }, 60 * 1000)
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') touchActivity(accountId)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accountId, profilesFetchedFor])
+    document.addEventListener('visibilitychange', onVisibilityChange)
+
+    return () => {
+      clearInterval(interval)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+    }
+  }, [accountId])
 
   const selectProfile = useCallback(
     (id) => {
       setActiveProfileId(id)
-      if (accountId) localStorage.setItem(storageKey(accountId), id)
+      if (accountId) {
+        localStorage.setItem(storageKey(accountId), id)
+        touchActivity(accountId)
+      }
     },
     [accountId],
   )
 
   const clearActiveProfile = useCallback(() => {
     setActiveProfileId(null)
-    if (accountId) localStorage.removeItem(storageKey(accountId))
+    if (accountId) {
+      localStorage.removeItem(storageKey(accountId))
+      localStorage.removeItem(activityKey(accountId))
+    }
   }, [accountId])
 
   const createProfile = useCallback(
     async (input) => {
+      // Chequeo amable antes del round-trip — el trigger `enforce_max_profiles`
+      // (migración 0019) es la validación real y queda como respaldo.
+      if (profiles.length >= MAX_PROFILES) {
+        throw new Error(`Una cuenta puede tener hasta ${MAX_PROFILES} perfiles.`)
+      }
       const created = await createProfileRequest(accountId, input)
       setProfiles((prev) => [...prev, created])
       return created
     },
-    [accountId],
+    [accountId, profiles],
   )
 
   const updateProfileById = useCallback(async (id, input) => {

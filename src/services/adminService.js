@@ -54,7 +54,7 @@ export async function listUsers({ page = 1, search = '', role = '' } = {}) {
 
   let query = supabase
     .from('profiles')
-    .select('user_id, username, avatar, bio, role, created_at', { count: 'exact' })
+    .select('user_id, username, avatar, bio, role, activo, created_at', { count: 'exact' })
     .order('created_at', { ascending: false })
 
   if (search.trim()) query = query.ilike('username', `%${search.trim()}%`)
@@ -87,6 +87,26 @@ export async function updateUserRole(userId, role) {
   }
 }
 
+/**
+ * Activar/desactivar una cuenta (v1.0) — acción real de moderación que no
+ * requiere el Admin API de Supabase (service role, no disponible en el
+ * cliente). Desactivar no cierra la sesión ya abierta de esa cuenta por
+ * sí solo: es una marca que el resto del código respeta si en el futuro
+ * se agrega un chequeo de acceso basado en `activo`. Restringido a
+ * `super_admin` por la misma naturaleza de "administrar cuentas ajenas"
+ * que el cambio de rol — no hay trigger de DB para esto todavía (no
+ * cambia ningún dato sensible como el rol), así que la restricción real
+ * hoy es solo de UI (ver pages/admin/Users.jsx).
+ */
+export async function updateUserStatus(userId, activo) {
+  if (!isSupabaseConfigured) throw new Error(GENERIC_ERROR)
+  const { error } = await supabase.from('profiles').update({ activo }).eq('user_id', userId)
+  if (error) {
+    devError('[adminService.updateUserStatus] Supabase error:', error)
+    throw new Error('No pudimos actualizar el estado de la cuenta. Inténtalo nuevamente.')
+  }
+}
+
 export async function listComments({ page = 1, search = '' } = {}) {
   if (!isSupabaseConfigured) return { data: [], total: 0, page, pageSize: PAGE_SIZE }
 
@@ -101,4 +121,16 @@ export async function listComments({ page = 1, search = '' } = {}) {
   const { data, error, count } = await query.range(from, from + PAGE_SIZE - 1)
   if (error) throw new Error(GENERIC_ERROR)
   return { data, total: count ?? 0, page, pageSize: PAGE_SIZE }
+}
+
+// Moderación real (v1.0): eliminar un comentario. `comments.user_id` es
+// ON DELETE SET NULL respecto a auth.users (migración 0006) — acá el
+// borrado es de la fila del comentario en sí, sin tocar la cuenta autora.
+export async function deleteComment(id) {
+  if (!isSupabaseConfigured) throw new Error(GENERIC_ERROR)
+  const { error } = await supabase.from('comments').delete().eq('id', id)
+  if (error) {
+    devError('[adminService.deleteComment] Supabase error:', error)
+    throw new Error('No pudimos eliminar el comentario. Inténtalo nuevamente.')
+  }
 }

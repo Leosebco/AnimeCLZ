@@ -1,6 +1,7 @@
 import AppRouter from '@/router/AppRouter'
 import { AuthProvider } from '@/context/AuthContext'
 import { ProfileProvider } from '@/context/ProfileContext'
+import { ThemeProvider } from '@/context/ThemeContext'
 import { FavoritesProvider } from '@/context/FavoritesContext'
 import { WatchLaterProvider } from '@/context/WatchLaterContext'
 import ErrorBoundary from '@/components/ErrorBoundary'
@@ -10,11 +11,13 @@ function App() {
     <ErrorBoundary>
       <AuthProvider>
         <ProfileProvider>
-          <FavoritesProvider>
-            <WatchLaterProvider>
-              <AppRouter />
-            </WatchLaterProvider>
-          </FavoritesProvider>
+          <ThemeProvider>
+            <FavoritesProvider>
+              <WatchLaterProvider>
+                <AppRouter />
+              </WatchLaterProvider>
+            </FavoritesProvider>
+          </ThemeProvider>
         </ProfileProvider>
       </AuthProvider>
     </ErrorBoundary>

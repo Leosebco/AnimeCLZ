@@ -7,10 +7,12 @@ import Container from '@/components/ui/Container'
 import NavbarSearch from './NavbarSearch'
 import AccountMenu from './AccountMenu'
 import { useAuth } from '@/hooks/useAuth'
+import { useProfile } from '@/hooks/useProfile'
 import { cn } from '@/utils/cn'
 
 function Navbar() {
   const { isAuthenticated, signOut } = useAuth()
+  const { clearActiveProfile } = useProfile()
   const navigate = useNavigate()
   const [isScrolled, setIsScrolled] = useState(false)
   const [isMenuOpen, setIsMenuOpen] = useState(false)
@@ -18,6 +20,9 @@ function Navbar() {
   const handleMobileSignOut = async () => {
     setIsMenuOpen(false)
     await signOut()
+    // Ver AccountMenu.jsx: cerrar sesión debe volver a mostrar el
+    // selector de perfiles en el próximo login, aunque sea la misma cuenta.
+    clearActiveProfile()
     navigate(ROUTES.LANDING)
   }
 
@@ -31,7 +36,7 @@ function Navbar() {
   return (
     <header
       className={cn(
-        'fixed top-0 left-0 right-0 z-50 border-b backdrop-blur-xl transition-all duration-300',
+        'safe-top fixed top-0 left-0 right-0 z-50 border-b backdrop-blur-xl transition-all duration-300',
         isScrolled
           ? 'bg-background/70 border-border shadow-[0_8px_30px_-15px_rgba(0,0,0,0.6)]'
           : 'bg-background/30 border-transparent',
@@ -77,7 +82,7 @@ function Navbar() {
           <button
             aria-label={isMenuOpen ? 'Cerrar menú' : 'Abrir menú'}
             onClick={() => setIsMenuOpen((open) => !open)}
-            className="md:hidden p-2.5 rounded-full text-text transition-colors hover:bg-hover"
+            className="md:hidden flex min-h-11 min-w-11 items-center justify-center rounded-full text-text transition-colors hover:bg-hover"
           >
             {isMenuOpen ? <X size={21} /> : <Menu size={21} />}
           </button>

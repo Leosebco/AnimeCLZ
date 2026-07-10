@@ -127,14 +127,14 @@ function AdminSidebar({ mobileOpen, onCloseMobile }) {
               animate={{ x: 0 }}
               exit={{ x: '-100%' }}
               transition={{ duration: 0.25, ease: 'easeOut' }}
-              className="fixed inset-y-0 left-0 z-50 w-72 border-r border-border bg-surface md:hidden"
+              className="safe-top fixed inset-y-0 left-0 z-50 w-72 border-r border-border bg-surface md:hidden"
             >
               <div className="flex justify-end p-3">
                 <button
                   type="button"
                   aria-label="Cerrar menú"
                   onClick={onCloseMobile}
-                  className="rounded-full p-2 text-text-secondary transition-colors hover:bg-hover hover:text-text"
+                  className="flex min-h-11 min-w-11 items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-hover hover:text-text"
                 >
                   <X size={20} />
                 </button>

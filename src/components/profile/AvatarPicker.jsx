@@ -109,7 +109,7 @@ function AvatarPicker({ accountId, nombre, value, onChange }) {
               onClick={() => setTab(option.value)}
               aria-pressed={tab === option.value}
               className={cn(
-                'flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+                'flex min-h-11 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
                 tab === option.value
                   ? 'border-transparent bg-primary text-white'
                   : 'border-border text-text-secondary hover:border-primary/50 hover:text-text',
@@ -133,7 +133,7 @@ function AvatarPicker({ accountId, nombre, value, onChange }) {
               onClick={() => onChange({ avatar: null, tipoAvatar: AVATAR_TYPES.INITIAL, color })}
               style={{ backgroundColor: color }}
               className={cn(
-                'h-9 w-9 rounded-full ring-2 ring-offset-2 ring-offset-surface transition-transform hover:scale-110',
+                'h-11 w-11 rounded-full ring-2 ring-offset-2 ring-offset-surface transition-transform hover:scale-110',
                 value.color === color ? 'ring-text' : 'ring-transparent',
               )}
             />
@@ -170,7 +170,7 @@ function AvatarPicker({ accountId, nombre, value, onChange }) {
           </div>
 
           {searching && (
-            <div className="mt-3 grid grid-cols-4 gap-2">
+            <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
               {Array.from({ length: 8 }).map((_, index) => (
                 <Skeleton key={index} className="aspect-square rounded-xl" />
               ))}
@@ -178,7 +178,7 @@ function AvatarPicker({ accountId, nombre, value, onChange }) {
           )}
 
           {!searching && visibleCharacters.length > 0 && (
-            <div className="mt-3 grid grid-cols-4 gap-2">
+            <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
               {visibleCharacters.map((character) => (
                 <button
                   key={character.id}

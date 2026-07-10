@@ -13,13 +13,18 @@ import { cn } from '@/utils/cn'
  * Mi Lista, Recomendados/Relacionados en Detalle). Every caller passes the
  * same model shape from animeService.
  *
- * Hover reveals three plain icons (Ver / Favoritos / Información) — no
- * button chrome, no floating boxes. The title block underneath is always a
- * link too, so tapping the card works the same on touch devices that have
- * no hover state. Favoritos requires a session — an anonymous click
- * redirects to /iniciar-sesion instead of toggling silently. "Mi Lista"
- * (watch later, a separate list — see WatchLaterContext) only lives in
- * Hero/AnimeDetail's button row, not on the compact card.
+ * Toda la card es un único `Link` de cobertura total (siempre activo, no
+ * depende de `:hover`) — es el fix real de un bug reportado en iPhone: antes,
+ * el único destino de navegación vivía dentro de un overlay que solo
+ * aparecía con `group-hover:opacity-100`, y en iOS Safari el primer tap
+ * dispara el `:hover` en vez del click, así que "revelaba" los íconos en vez
+ * de abrir el detalle. Play/Información ahora son decorativos (solo
+ * refuerzo visual en hover de escritorio, `pointer-events-none`); Favoritos
+ * es un botón siempre visible (no gateado por hover) en la esquina superior
+ * derecha, para que también sea alcanzable por touch sin depender de hover.
+ * Favoritos requiere sesión — un click anónimo redirige a /iniciar-sesion en
+ * vez de alternar en silencio. "Mi Lista" (watch later, ver WatchLaterContext)
+ * solo vive en el botón de Hero/AnimeDetail, no en esta card compacta.
  */
 function AnimeCard({ movie, className }) {
   const { isAuthenticated } = useAuth()
@@ -67,64 +72,61 @@ function AnimeCard({ movie, className }) {
           </span>
         )}
 
-        {favorite && (
-          <Heart
-            size={16}
-            className="absolute right-2 top-2 text-primary drop-shadow-[0_2px_6px_rgba(0,0,0,0.7)]"
+        {/* Decorativo — refuerzo visual solo en hover de escritorio; no
+            requiere tap propio, la card entera ya navega (ver Link de
+            cobertura más abajo). */}
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center gap-5 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+          <Play
+            size={20}
             fill="currentColor"
+            className="text-text drop-shadow-[0_2px_6px_rgba(0,0,0,0.7)]"
             aria-hidden
           />
-        )}
-
-        {/* Hover actions — plain icons, no background chrome */}
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center gap-5 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
-          <Link
-            to={detailPath}
-            aria-label={`Ver ${movie.title}`}
-            className="pointer-events-auto text-text drop-shadow-[0_2px_6px_rgba(0,0,0,0.7)] transition-transform duration-200 hover:scale-110 hover:text-primary"
-          >
-            <Play size={20} fill="currentColor" />
-          </Link>
-          <button
-            type="button"
-            onClick={handleToggleFavorite}
-            aria-label={favorite ? 'Quitar de Favoritos' : 'Agregar a Favoritos'}
-            aria-pressed={favorite}
-            className="pointer-events-auto text-text drop-shadow-[0_2px_6px_rgba(0,0,0,0.7)] transition-transform duration-200 hover:scale-110 hover:text-primary"
-          >
-            <Heart size={20} fill={favorite ? 'currentColor' : 'none'} />
-          </button>
-          <Link
-            to={detailPath}
-            aria-label={`Información de ${movie.title}`}
-            className="pointer-events-auto text-text drop-shadow-[0_2px_6px_rgba(0,0,0,0.7)] transition-transform duration-200 hover:scale-110 hover:text-primary"
-          >
-            <Info size={20} />
-          </Link>
+          <Info size={20} className="text-text drop-shadow-[0_2px_6px_rgba(0,0,0,0.7)]" aria-hidden />
         </div>
 
-        <Link to={detailPath} className="absolute inset-x-0 bottom-0 p-3">
-          <h3 className="truncate font-display text-sm font-semibold text-text">{movie.title}</h3>
-          <div className="mt-1 flex items-center gap-1.5 text-xs text-text-secondary">
-            {movie.type && <span>{movie.type}</span>}
-            {movie.type && movie.year && <span aria-hidden>&middot;</span>}
-            {movie.year && <span>{movie.year}</span>}
-            {(movie.type || movie.year) && status && <span aria-hidden>&middot;</span>}
-            {status && <span>{status}</span>}
-          </div>
-          {genres.length > 0 && (
-            <div className="mt-1.5 flex flex-wrap gap-1">
-              {genres.map((genre) => (
-                <span
-                  key={genre}
-                  className="rounded-full border border-border px-1.5 py-0.5 text-[10px] text-text-secondary"
-                >
-                  {genre}
-                </span>
-              ))}
+        {/* Link de cobertura total — el único área táctil primaria de la
+            card, siempre activa (no depende de :hover), lo que evita la
+            "zona muerta" y el bug de iOS Safari donde el primer tap solo
+            disparaba :hover en vez de navegar. */}
+        <Link to={detailPath} aria-label={movie.title} className="absolute inset-0">
+          <div className="absolute inset-x-0 bottom-0 p-3">
+            <h3 className="truncate font-display text-sm font-semibold text-text">{movie.title}</h3>
+            <div className="mt-1 flex items-center gap-1.5 text-xs text-text-secondary">
+              {movie.type && <span>{movie.type}</span>}
+              {movie.type && movie.year && <span aria-hidden>&middot;</span>}
+              {movie.year && <span>{movie.year}</span>}
+              {(movie.type || movie.year) && status && <span aria-hidden>&middot;</span>}
+              {status && <span>{status}</span>}
             </div>
-          )}
+            {genres.length > 0 && (
+              <div className="mt-1.5 flex flex-wrap gap-1">
+                {genres.map((genre) => (
+                  <span
+                    key={genre}
+                    className="rounded-full border border-border px-1.5 py-0.5 text-[10px] text-text-secondary"
+                  >
+                    {genre}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
         </Link>
+
+        {/* Favoritos — siempre visible (no gateado por hover) para ser
+            alcanzable por touch sin necesitar hover; se mantiene como
+            hermano del Link de cobertura (no anidado dentro de un <a>,
+            HTML inválido) para seguir funcionando de forma independiente. */}
+        <button
+          type="button"
+          onClick={handleToggleFavorite}
+          aria-label={favorite ? 'Quitar de Favoritos' : 'Agregar a Favoritos'}
+          aria-pressed={favorite}
+          className="absolute right-1 top-1 flex min-h-11 min-w-11 items-center justify-center text-text drop-shadow-[0_2px_6px_rgba(0,0,0,0.7)] transition-transform duration-200 hover:scale-110 hover:text-primary"
+        >
+          <Heart size={18} fill={favorite ? 'currentColor' : 'none'} />
+        </button>
       </motion.div>
     </article>
   )

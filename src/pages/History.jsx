@@ -6,6 +6,7 @@ import EmptyState from '@/components/ui/EmptyState'
 import ErrorState from '@/components/ui/ErrorState'
 import Skeleton from '@/components/ui/Skeleton'
 import { useAuth } from '@/hooks/useAuth'
+import { useProfile } from '@/hooks/useProfile'
 import { listHistory } from '@/services/historyService'
 import { animeDetailPath } from '@/constants'
 
@@ -13,17 +14,20 @@ import { animeDetailPath } from '@/constants'
  * "Continuar viendo". Sin un reproductor real todavía nada escribe en
  * watch_history (ver historyService), así que esta página estará vacía en
  * la práctica hasta la fase "Streaming" del ROADMAP — se deja construida
- * para no bloquear ese trabajo futuro con una página faltante.
+ * para no bloquear ese trabajo futuro con una página faltante. Desde v1.5
+ * el historial es por PERFIL (antes por cuenta) — ver migración 0021.
  */
 function History() {
   const { user } = useAuth()
+  const { activeProfile } = useProfile()
+  const profileId = activeProfile?.id
   const [entries, setEntries] = useState([])
   const [status, setStatus] = useState('loading')
 
   useEffect(() => {
-    if (!user) return
+    if (!user || !profileId) return
     let active = true
-    listHistory(user.id)
+    listHistory(profileId)
       .then((data) => {
         if (!active) return
         setEntries(data)
@@ -35,11 +39,11 @@ function History() {
     return () => {
       active = false
     }
-  }, [user])
+  }, [user, profileId])
 
   const handleRetry = () => {
     setStatus('loading')
-    listHistory(user.id)
+    listHistory(profileId)
       .then((data) => {
         setEntries(data)
         setStatus('success')
