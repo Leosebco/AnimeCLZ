@@ -1,4 +1,5 @@
 import { supabase, isSupabaseConfigured } from '@/lib/supabase'
+import { devError } from '@/utils/logger'
 
 const GENERIC_ERROR = 'No pudimos subir la imagen. Inténtalo nuevamente.'
 const MAX_SIZE_BYTES = 3 * 1024 * 1024
@@ -19,7 +20,10 @@ export async function uploadAvatarImage(accountId, file) {
   const path = `${accountId}/${crypto.randomUUID()}.${extension}`
 
   const { error } = await supabase.storage.from('avatars').upload(path, file, { upsert: false })
-  if (error) throw new Error(GENERIC_ERROR)
+  if (error) {
+    devError('[avatarService.uploadAvatarImage] Supabase Storage error:', error)
+    throw new Error(GENERIC_ERROR)
+  }
 
   const { data } = supabase.storage.from('avatars').getPublicUrl(path)
   return data.publicUrl

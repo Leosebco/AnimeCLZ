@@ -1,4 +1,4 @@
-import { createContext, useCallback, useEffect, useMemo, useState } from 'react'
+import { createContext, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import {
   createProfile as createProfileRequest,
@@ -7,6 +7,7 @@ import {
   updateProfile as updateProfileRequest,
 } from '@/services/profilesAccountService'
 import { AVATAR_TYPES, PROFILE_COLORS } from '@/constants'
+import { devError, devLog } from '@/utils/logger'
 
 function storageKey(accountId) {
   return `animeclz:activeProfile:${accountId}`
@@ -37,13 +38,35 @@ export function ProfileProvider({ children }) {
   const [profilesFetchedFor, setProfilesFetchedFor] = useState(null)
   const [activeProfileId, setActiveProfileId] = useState(null)
 
+  // Ref (no dependencia de fetchProfiles): el nombre de respaldo para el
+  // perfil autogenerado no debe hacer que fetchProfiles cambie de
+  // identidad cada vez que `accountProfile`/`user` se renuevan — Supabase
+  // entrega un objeto `session`/`user` NUEVO en cada evento de auth,
+  // incluido un simple refresh de token en segundo plano. Si esos objetos
+  // fueran dependencias de fetchProfiles, el efecto de montaje de abajo
+  // (que depende de fetchProfiles) se volvería a disparar en medio de la
+  // sesión y dispararía un listProfiles/createProfile DUPLICADO — la
+  // causa raíz real del "No pudimos cargar esta sección" intermitente en
+  // el selector de perfiles: dos llamadas corriendo en paralelo podían
+  // pisarse el estado final entre sí de forma no determinística.
+  const defaultNameRef = useRef('Mi Perfil')
+  useEffect(() => {
+    defaultNameRef.current = accountProfile?.username || user?.email?.split('@')[0] || 'Mi Perfil'
+  }, [accountProfile, user])
+
+  // Evita que dos invocaciones de fetchProfiles para la misma cuenta
+  // corran en paralelo (defensa adicional, por si el efecto de montaje se
+  // disparara dos veces por cualquier otro motivo) — sin esto, ambas
+  // podían ver 0 perfiles y crear dos perfiles "principales" duplicados.
+  const fetchingForRef = useRef(null)
+
   const fetchProfiles = useCallback(async () => {
     if (!accountId) return
+    if (fetchingForRef.current === accountId) return
+    fetchingForRef.current = accountId
     try {
       const data = await listProfiles(accountId)
-      // Instrumentación temporal pedida para diagnosticar el selector de
-      // perfiles — dejar mientras se sigue verificando en producción.
-      console.log('[ProfileContext] listProfiles data:', data)
+      devLog('[ProfileContext] listProfiles:', data)
 
       if (data.length === 0) {
         // 0 filas no es un error: la cuenta existe pero, por la razón que
@@ -51,13 +74,13 @@ export function ProfileProvider({ children }) {
         // incompleto, etc.), se quedó sin perfil. En vez de mostrar un
         // selector vacío exigiendo "Crear Perfil" a mano, se crea el
         // perfil principal automáticamente y se continúa.
-        const defaultName = accountProfile?.username || user?.email?.split('@')[0] || 'Mi Perfil'
         const created = await createProfileRequest(accountId, {
-          nombre: defaultName,
+          nombre: defaultNameRef.current,
           avatar: null,
           tipoAvatar: AVATAR_TYPES.INITIAL,
           color: PROFILE_COLORS[0],
         })
+        devLog('[ProfileContext] perfil principal autocreado:', created)
         setProfiles([created])
         setActiveProfileId(created.id)
         localStorage.setItem(storageKey(accountId), created.id)
@@ -68,12 +91,14 @@ export function ProfileProvider({ children }) {
       setProfilesError(null)
       setProfilesFetchedFor(accountId)
     } catch (err) {
-      console.error('[ProfileContext] fetchProfiles error:', err)
+      devError('[ProfileContext] fetchProfiles error:', err)
       setProfiles([])
       setProfilesError(err)
       setProfilesFetchedFor(accountId)
+    } finally {
+      fetchingForRef.current = null
     }
-  }, [accountId, accountProfile, user])
+  }, [accountId])
 
   useEffect(() => {
     if (!accountId) return

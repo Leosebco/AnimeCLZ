@@ -1,4 +1,5 @@
 import { supabase, isSupabaseConfigured } from '@/lib/supabase'
+import { devError } from '@/utils/logger'
 
 const GENERIC_ERROR = 'No pudimos cargar los perfiles de esta cuenta. Inténtalo nuevamente.'
 const SAVE_ERROR = 'No pudimos guardar el perfil. Inténtalo nuevamente.'
@@ -39,8 +40,9 @@ export async function listProfiles(accountId) {
     // El mensaje al usuario es genérico a propósito (mismo criterio que el
     // resto de la app), pero el error real de Supabase (code/message/
     // details/hint de PostgREST) nunca debe perderse — es la única forma
-    // de diagnosticar RLS/grants faltantes en vez de adivinar.
-    console.error('[profilesAccountService.listProfiles] Supabase error:', error)
+    // de diagnosticar RLS/grants faltantes en vez de adivinar. Solo en
+    // consola de desarrollo (ver utils/logger.js) — nunca en producción.
+    devError('[profilesAccountService.listProfiles] Supabase error:', error)
     throw new Error(GENERIC_ERROR)
   }
   return data.map(fromRow)
@@ -53,7 +55,10 @@ export async function createProfile(accountId, { nombre, avatar, tipoAvatar, col
     .insert({ account_id: accountId, nombre, avatar, tipo_avatar: tipoAvatar, color })
     .select(COLUMNS)
     .single()
-  if (error) throw new Error(SAVE_ERROR)
+  if (error) {
+    devError('[profilesAccountService.createProfile] Supabase error:', error)
+    throw new Error(SAVE_ERROR)
+  }
   return fromRow(data)
 }
 
@@ -65,7 +70,10 @@ export async function updateProfile(id, { nombre, avatar, tipoAvatar, color }) {
     .eq('id', id)
     .select(COLUMNS)
     .single()
-  if (error) throw new Error(SAVE_ERROR)
+  if (error) {
+    devError('[profilesAccountService.updateProfile] Supabase error:', error)
+    throw new Error(SAVE_ERROR)
+  }
   return fromRow(data)
 }
 
@@ -75,5 +83,8 @@ export async function updateProfile(id, { nombre, avatar, tipoAvatar, color }) {
 export async function deactivateProfile(id) {
   if (!isSupabaseConfigured) throw new Error(SAVE_ERROR)
   const { error } = await supabase.from('profiles_account').update({ activo: false }).eq('id', id)
-  if (error) throw new Error('No pudimos eliminar el perfil. Inténtalo nuevamente.')
+  if (error) {
+    devError('[profilesAccountService.deactivateProfile] Supabase error:', error)
+    throw new Error('No pudimos eliminar el perfil. Inténtalo nuevamente.')
+  }
 }

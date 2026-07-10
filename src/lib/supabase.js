@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { devWarn } from '@/utils/logger'
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
@@ -9,7 +10,12 @@ const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseKey)
 
 if (!isSupabaseConfigured) {
-  console.warn(
+  // En Vite, VITE_* se hornea en el bundle en BUILD time — si esto se ve
+  // en desarrollo, revisa tu `.env` local; si un despliegue entero se
+  // comporta como "no configurado", el problema real está en las
+  // Environment Variables del proveedor de hosting (Vercel → Project
+  // Settings → Environment Variables), no en el código.
+  devWarn(
     'Supabase no está configurado: define VITE_SUPABASE_URL y VITE_SUPABASE_PUBLISHABLE_KEY en tu .env (ver .env.example). La autenticación y los datos persistentes no funcionarán hasta entonces.',
   )
 }

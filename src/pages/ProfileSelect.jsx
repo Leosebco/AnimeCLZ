@@ -32,9 +32,12 @@ function ProfileSelect() {
     navigate(redirectTo, { replace: true })
   }
 
+  // No selecciona ni navega automáticamente al crear: el nuevo perfil
+  // aparece en esta misma grilla (createProfile ya actualiza `profiles`
+  // en ProfileContext) para poder seguir creando más de uno por cuenta;
+  // el usuario elige con cuál continuar tocándolo, como cualquier otro.
   const handleCreate = async (values) => {
-    const created = await createProfile(values)
-    handleChoose(created.id)
+    await createProfile(values)
   }
 
   return (

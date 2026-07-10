@@ -1,4 +1,5 @@
 import { supabase, isSupabaseConfigured } from '@/lib/supabase'
+import { devError } from '@/utils/logger'
 
 const GENERIC_ERROR = 'No pudimos cargar los datos del panel. Inténtalo nuevamente.'
 
@@ -81,7 +82,7 @@ export async function updateUserRole(userId, role) {
   if (!isSupabaseConfigured) throw new Error(GENERIC_ERROR)
   const { error } = await supabase.from('profiles').update({ role }).eq('user_id', userId)
   if (error) {
-    console.error('[adminService.updateUserRole] Supabase error:', error)
+    devError('[adminService.updateUserRole] Supabase error:', error)
     throw new Error('No pudimos actualizar el rol. Verifica que tu perfil activo sea Super Administrador.')
   }
 }
