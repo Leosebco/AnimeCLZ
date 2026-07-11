@@ -104,6 +104,15 @@ familias, no hay mono) viven ahí; se reutilizan en vez de hardcodear valores.
 - `providers/anilist/AniListProvider.js` y `providers/tmdb/TMDBProvider.js` son **stubs sin
   implementar** (arquitectura preparada) — cada método lanza un error claro si se llega a invocar (ver
   `providers/stubProvider.js`). No lo son "por error"; no completar su implementación sin que se pida.
+  **No confundir con `api/anilist.js` (v1.6)**: ese es un cliente GraphQL real y en uso — desde v1.7 ya
+  no solo por el buscador de avatares (`services/avatarSearchService.js`), también por
+  `services/searchService.js`/`characterSearchService.js` (buscador global, ver más abajo) — pero sigue
+  sin ser una implementación de `AniListProvider.js` ni del catálogo de anime general (Home/Explorar/
+  Temporada/Top/Detalle); `AniListProvider.js` sigue siendo un stub sin tocar. `searchService.js`/
+  `characterSearchService.js`/`avatarSearchService.js` importan `animeService.js`/`api/jikan.js`/
+  `api/anilist.js` directamente, sin pasar por `AnimeProvider.js` — excepción deliberada: son
+  orquestadores de búsqueda cruzada entre fuentes, no navegación de catálogo, y no encajan en el modelo
+  "un solo proveedor activo" que `AnimeProvider.js` existe para resolver.
 - Cambiar el proveedor activo en el futuro es cambiar el único `export * from './jikan/JikanProvider'`
   de `AnimeProvider.js` — ningún otro archivo debería necesitar tocarse.
 - Cualquier función nueva de catálogo se agrega en `animeService.js` (mismo lugar de siempre) y queda
@@ -274,12 +283,10 @@ mi lista, historial) y el perfil del usuario.
     `clearActiveProfile()` también, o el selector no reaparecerá ahí.
   - Avatar: `AvatarPicker.jsx` ofrece tres modos (`AVATAR_TYPES` en `constants/index.js`) — `inicial`
     (círculo de color + letra, por defecto, sin imagen), `subida` (imagen propia a Supabase Storage,
-    bucket `avatars` de la migración 0010, `services/avatarService.js`) y `personaje` (elegido desde
-    Jikan, `searchCharacters`/`getCharacterAnime` en `animeService.js`). El grid de búsqueda de
-    personajes solo muestra imagen + nombre — el endpoint de búsqueda global de Jikan (`/characters`) no
-    trae a qué anime pertenece cada uno en la respuesta de lista (a diferencia de
-    `/anime/{id}/characters`); el anime se resuelve con una sola llamada extra recién al confirmar un
-    personaje, no para los 12 resultados del grid a la vez.
+    bucket `avatars` de la migración 0010, `services/avatarService.js`) y `personaje` (buscador
+    inteligente de personajes de anime, rediseñado en v1.6 — ver esa entrada en Notas técnicas para el
+    detalle completo: `services/avatarSearchService.js`, AniList primero con Jikan de respaldo,
+    "Seleccionar" guarda y cierra en un solo paso).
 - **Favoritos vs. Mi Lista son dos listas distintas** (decisión tomada al llegar Supabase, ya anticipada
   en ROADMAP.md desde v0.8): `favorites` = "me gusta" (♥, `FavoritesContext`/`useFavorites()`);
   `watch_later` = "quiero verlo después" (`WatchLaterContext`/`useWatchLater()`). Ambos hooks comparten
@@ -568,6 +575,149 @@ mi lista, historial) y el perfil del usuario.
   De paso, se corrigió un warning real de Framer Motion sin relación con el crash: `Hero.jsx` tenía dos
   hijos directos (poster + info) dentro de un `AnimatePresence mode="wait"`, que solo admite un hijo a la
   vez — consolidados en un único wrapper por slide.
+- **v1.6 — Buscador inteligente de avatares (personaje de anime).** La pestaña "Personaje de anime" de
+  `AvatarPicker.jsx` no funcionaba de verdad — dos causas reales, no supuestas:
+  - **Bug 100% reproducible**: `getCharacterAnime` (`services/animeService.js`) pedía
+    `GET /characters/{id}` — ese endpoint de Jikan nunca trae relación con anime (confirmado pidiéndolo en
+    vivo: solo `mal_id/name/images/about`), así que la función devolvía `null` siempre, para cualquier
+    personaje. Corregido: ahora pide `GET /characters/{id}/anime` (el sub-recurso correcto, que sí trae
+    `role`) y devuelve `{ anime, role }` en vez de un string suelto.
+  - **Fragilidad real de Jikan, verificada en vivo durante esta misma sesión**: `/anime?q=` y
+    `/characters?q=` devolvieron `504` repetidas veces (backend de búsqueda de MAL degradado en ese
+    momento) — con el único manejo de error de antes (`.catch(() => setCharacters([]))`), esto era
+    indistinguible en la UI de "no hay resultados".
+  - **Arquitectura nueva**: `services/avatarSearchService.js` — único punto de entrada
+    `searchAvatarCandidates(query, signal)`. **AniList (GraphQL, `api/anilist.js`, nuevo) primero**: una
+    sola consulta con dos ramas (`animeMatch`: busca el término como título de anime y trae su elenco con
+    rol; `characterMatch`: busca el término como nombre de personaje directo, con su anime/rol si
+    AniList lo tiene resuelto) — fusionadas y deduplicadas por id. Verificado en vivo contra
+    `graphql.anilist.co`: "Naruto" trae Naruto/Sasuke/Kakashi/Sakura; "Gojo" (sin ningún anime con ese
+    título) trae "Satoru Gojou — Jujutsu Kaisen" igual, vía `characterMatch`; "Frieren" trae
+    Frieren/Fern/Stark/Himmel. **No hace falta detectar "¿esto es un anime o un personaje?"** — fusionar
+    las dos ramas ya da el comportamiento inteligente pedido. **Jikan como respaldo**, solo si AniList
+    lanza error o da 0 resultados combinados: busca anime por título (reusa `searchAnime`) → si hay
+    match, trae su elenco con rol (`GET /anime/{id}/characters`, ya lo usa `getAnimeCharacters` en otro
+    contexto); además intenta `searchCharacters` (búsqueda directa de personaje) — estos resultados no
+    traen anime/rol por la limitación ya documentada de ese endpoint de Jikan, se muestran igual sin esos
+    dos campos (opcionales en la tarjeta) en vez de N llamadas extra para resolverlos.
+  - **"Avatares recientes" y "Favoritos" (tabla `avatar_history`, migración 0022)** — por CUENTA, no por
+    perfil (pedido explícito del usuario para "recientes"; mismo alcance aplicado a "favoritos" por
+    consistencia). `services/avatarHistoryService.js`: `listAvatarHistory`/`recordAvatarUse`
+    (actualiza `used_at` sin tocar `is_favorite` en un upsert parcial)/`setAvatarFavorite`. Se muestran en
+    vez de la grilla de resultados cuando el buscador está vacío.
+  - **"Seleccionar" es de un solo paso (confirmado con el usuario)**: guarda el avatar en Supabase y
+    cierra el modal entero al instante, sin pasar por el botón "Guardar" — `ProfileFormModal.jsx` expone
+    `saveForm()` (extraída de su `handleSubmit` de siempre, para no duplicar validación/cierre) y un nuevo
+    prop `onSelectAndClose` que solo usa la pestaña "Personaje"; los otros dos modos de avatar (Inicial+
+    color, Subir imagen) siguen usando `onChange` (quedan en borrador hasta "Guardar"), sin cambios.
+  - Componente nuevo `AvatarCandidateCard.jsx` (reusado en resultados de búsqueda y en Recientes/
+    Favoritos): imagen, nombre, anime, rol, botón Seleccionar, estrella de favorito **siempre visible**
+    (no gateada por hover — misma lección del sprint móvil con `AnimeCard`), 44px de área táctil, grid
+    `grid-cols-2 sm:grid-cols-3 lg:grid-cols-5`.
+  - Debounce bajado a 300ms (antes 400ms); caché de búsqueda reutilizando `hooks/useFetch.js` (mismo
+    mecanismo de caché/TTL/abort que el resto de la app, no uno nuevo), TTL 5 min.
+- **v1.7 — Búsqueda global, Home móvil y scroll entre páginas.** Pedido por el usuario como "v1.6"
+  (colisiona con el número ya usado arriba para el buscador de avatares) — documentado con el número real
+  de secuencia. Auditoría de código + pruebas en vivo antes de tocar nada (pedido explícito: causa raíz,
+  no parches).
+  - **`services/searchService.js` (nuevo)** — el buscador general (`/buscar`, `NavbarSearch.jsx`), distinto
+    de `avatarSearchService.js` (que fusiona todo en una lista para elegir un único avatar): único punto de
+    entrada `searchAll(query, filters, signal)` → `{ anime, characters, degraded }`, **dos grupos
+    separados**. Anime: AniList primero (`Page.media(search, sort: SEARCH_MATCH, perPage: ~15)`, trayendo
+    `idMal`) con Jikan (`discoverAnime`/`searchAnime`) de respaldo si AniList falla o da 0 — reduce presión
+    real sobre el endpoint de búsqueda de Jikan (el más frágil de la API, documentado desde Sprint 3.5).
+    **Hallazgo de arquitectura verificado en vivo**: el campo `idMal` de AniList es el mismo `mal_id` que
+    usa `AnimeDetail.jsx` (confirmado pidiendo "Naruto": `idMal: 20`) — así que un resultado de AniList
+    navega a la MISMA ficha de detalle (100% Jikan, sin tocarla) sin duplicar esa página ni crear una
+    segunda fuente de verdad; un resultado sin `idMal` se descarta (no tiene a dónde navegar). Con filtros
+    restrictivos activos (género/tipo/estado/puntuación mínima) Jikan pasa a ser el primario para esa
+    búsqueda (traducir el vocabulario completo de filtros a enums de AniList quedó fuera de alcance;
+    AniList sigue de respaldo igual). Personajes reutiliza la cascada de v1.6, extraída a
+    `services/characterSearchService.js` para que avatar picker y buscador general la compartan sin
+    duplicarla — `avatarSearchService.js` quedó como un re-export de una línea.
+  - **`src/utils/apiCascade.js` (nuevo)** — `withFallback(primary, fallback, { onFailure, ... })`
+    centraliza el patrón "intentar primario, si falla o da vacío intentar respaldo, nunca lanzar salvo
+    abort real" que antes solo vivía dentro de `avatarSearchService.js`. `onFailure` solo dispara si AMBAS
+    fuentes fallan — de ahí sale `degraded`, que le permite a `Search.jsx` distinguir "cero resultados
+    reales" de "las dos fuentes cayeron a la vez" sin mostrar nunca un código de error técnico al usuario.
+  - **`Search.jsx` rediseñada** — antes mostraba todos los filtros a la vez. Ahora: barra de búsqueda +
+    botón "Filtros" (abre `Filters.jsx` dentro del `Modal.jsx` existente, sin drawer nuevo) → sin búsqueda
+    activa: "Búsquedas recientes" (`localStorage`, nuevo `utils/recentSearches.js` — pantalla pública, sin
+    sesión, no tiene sentido atarlas a Supabase) + "Tendencias" (`getTrending`) → con búsqueda activa:
+    secciones "Anime"/"Personajes". **Paginación eliminada** — una búsqueda de texto de dos fuentes ya trae
+    un conjunto acotado y ordenado por relevancia (mismo criterio que AniList/Crunchyroll); Explorar sigue
+    siendo la pantalla de catálogo paginado. `Filters.jsx` muestra 8 géneros principales + "Ver todos".
+    `NavbarSearch.jsx` usa `searchAll` también. `AvatarCandidateCard.jsx` se reutiliza para las tarjetas de
+    personaje del buscador general — sus props de acción (favorito/seleccionar) ahora son opcionales para
+    soportar un uso de solo lectura, en vez de crear una tarjeta casi idéntica.
+  - **`Hero.jsx` — bug real corregido**: `drag="x"` de Framer Motion envolvía TODO el contenido
+    (poster+título+sinopsis+3 botones) — en touch, ese reconocedor de gestos competía con el scroll
+    vertical nativo sobre un área que incluía botones interactivos (causa real de "cuesta seguir
+    bajando"/"captura el dedo"). El `drag` ahora solo existe en desktop, vía nuevo hook compartido
+    `hooks/useIsDesktop.js` (generalizado del que vivía inline en `Modal.jsx` desde el sprint móvil — sigue
+    siendo la única excepción del proyecto a "CSS-first, sin detección de viewport por JS", porque Framer
+    Motion anima valores en JS). Mobile: altura pasa de fija (`h-[92vh] min-h-[620px]`) a dependiente del
+    contenido, bastante más chica; los puntos de navegación pasan a flujo normal (debajo de los botones) en
+    vez de `position: absolute` sobre contenido centrado verticalmente — eliminaba de raíz el solape
+    reportado como "líneas del slider entre los botones" en viewports bajos. Desktop (`sm`+) sin cambios
+    visuales; los puntos/miniaturas absolutos existentes quedan gateados `hidden sm:flex`.
+  - **`MovieRow.jsx` — bug real corregido**: el scroller `overflow-x-auto` no definía
+    `touch-action`/`overscroll-behavior` (confirmado por grep: no existía en ningún lugar del código) —
+    sin esa pista CSS el navegador no puede comprometerse de inmediato con el eje horizontal y cede terreno
+    al scroll vertical de forma inconsistente entre navegadores (causa real de "bloquea el scroll
+    vertical", no un bug de JS). Agregado `[touch-action:pan-x] [overscroll-behavior-x:contain]`
+    (Tailwind arbitrario) al scroller — el listener de `wheel` existente (desktop-only) no se tocó.
+  - **`components/ScrollToTop.jsx` (nuevo)** — no existía ningún mecanismo de scroll-restauración en todo
+    el proyecto (confirmado por grep); React Router v7 no lo hace solo. `useLocation()` + `useEffect` con
+    `window.scrollTo({ top: 0, left: 0, behavior: 'instant' })` — el `behavior: 'instant'` es explícito y
+    necesario: `html` ya tiene `scroll-behavior: smooth` global (sprint móvil), así que sin ese override
+    cada cambio de ruta se habría visto como un scroll animado hacia arriba en vez de arrancar ya arriba.
+    Montado **una sola vez** dentro de `AppRouter.jsx` (no de `Layout.jsx`), para cubrir también el árbol
+    separado de `AdminLayout`.
+  - **`Footer.jsx`** suma `.safe-bottom` (utilidad ya existente desde el sprint móvil, sin uso hasta
+    ahora — es el último elemento antes del borde real de pantalla).
+  - **Auditoría dirigida** (no un segundo pase completo — v1.4 ya lo hizo exhaustivamente): confirmado por
+    grep que el único candidato real a overflow horizontal de página era el `drag`/`dragElastic` del Hero
+    (ya resuelto arriba); no se encontró otro uso de `drag` de Framer Motion en el resto del código.
+- **v1.8 — Explorar simplificado: filtros compactos + Drawer de filtros avanzados.** `Explore.jsx`
+  mostraba `Filters.jsx` completo y siempre visible (género/formato/estado/puntuación/año/orden de una
+  sola vez) — pedido explícito de reducirlo a un vistazo compacto, con el resto detrás de un botón
+  "Filtros". **No se tocó `Filters.jsx` ni `Search.jsx`** (que lo usa dentro de su propio `Modal` desde
+  v1.7, con aplicación instantánea) — se construyeron piezas nuevas específicas de Explorar en vez de
+  arriesgar esa pantalla ya aprobada.
+  - **`components/catalog/QuickFilters.jsx` (nuevo)** — fila compacta, solo desktop (`hidden sm:flex`):
+    6 géneros (Acción/Aventura/Fantasía/Romance/Comedia/Drama, orden pedido explícitamente, no el de
+    `GENRES`) + toggle "Ver más/Ver menos" que reemplaza la lista completa (`motion.div layout` anima el
+    reflow, sin manejo manual de alturas); mismo patrón para Formato (TV/Película/OVA + "Más
+    formatos"/"Menos formatos"); Estado fijo a 3 chips (Todos/En emisión/Finalizado — "Próximamente" solo
+    vive en el Drawer); Orden reusa el `Select` compacto de siempre. Sin puntuación ni año. Auto-expande
+    género/formato si el valor activo (llegado desde el Drawer o la URL) no está en el subconjunto
+    popular, vía `useEffect` — sin eso, una selección hecha en el Drawer quedaría "escondida" en la fila
+    compacta.
+  - **`components/catalog/AdvancedFiltersPanel.jsx` (nuevo)** — contenido del Drawer: set **completo** de
+    cada filtro (género/formato/estado/año/calificación/orden), sin ningún "ver más" interno (ya es la
+    vista exhaustiva) ni botones propios (el Drawer los pone alrededor). Puramente presentacional,
+    controlado (`value`/`onChange`), mismo contrato que `Filters.jsx`.
+  - **`Modal.jsx` — nueva prop `variant`** (`'center'` por defecto, sin cambiar ningún consumidor
+    existente; `'drawer'` nuevo, solo usado por Explorar). En mobile ambas variantes siguen siendo
+    idéntico bottom-sheet; en desktop, `'drawer'` desliza un panel de ancho fijo (`sm:w-96`) a todo el
+    alto de pantalla desde el borde derecho (`x: '100%' → 0`) en vez de la caja centrada de siempre —
+    mismo componente reutilizado (CLAUDE.md pide no crear un diálogo ad hoc nuevo), sin duplicar el
+    diálogo. El `transition` sigue embebido dentro de cada objeto `animate`/`exit`, nunca como prop de
+    nivel superior (regla de v1.5.1).
+  - **`Explore.jsx` — borrador con Limpiar/Aplicar**: `filters` (el estado real que dispara
+    `discoverAnime`) sigue mutado en vivo por `QuickFilters`, igual que los chips de siempre. El Drawer usa
+    un estado aparte, `draftFilters`, sembrado desde `filters` cada vez que se abre — "Aplicar" lo copia a
+    `filters` (reseteando `page` a 1) y cierra; "Limpiar filtros" solo vacía el borrador, sin tocar el
+    grid; cerrar sin aplicar (X/backdrop/Escape) descarta el borrador sin más, porque `openDrawer()`
+    siempre re-siembra desde `filters` la próxima vez. En mobile, `QuickFilters` desaparece del todo
+    (oculto en el propio componente) — solo quedan visibles el título y el botón "Filtros"; no se agregó
+    una caja de búsqueda por texto a Explorar (confirmado con el usuario: eso ya lo hace `/buscar`,
+    agregarla aquí habría sido una función nueva y hubiera duplicado ese propósito).
+  - **`constants/index.js` — `getYearOptions()` extraído**: el cálculo de años (`CURRENT_YEAR`/
+    `Array.from`) vivía inline dentro de `Filters.jsx`; ahora es una función compartida que también usa
+    `AdvancedFiltersPanel.jsx`, para no duplicarlo. `Filters.jsx` no cambió de comportamiento, solo de
+    dónde importa ese cálculo.
 
 ## Objetivo final
 

@@ -6,6 +6,7 @@ import FormField from '@/components/ui/FormField'
 import AvatarPicker from './AvatarPicker'
 import ThemePickerGrid from './ThemePickerGrid'
 import BackgroundPickerGrid from './BackgroundPickerGrid'
+import { recordAvatarUse } from '@/services/avatarHistoryService'
 import { AVATAR_TYPES, PROFILE_COLORS } from '@/constants'
 
 const EMPTY_VALUE = {
@@ -25,6 +26,14 @@ const EMPTY_VALUE = {
  * servicio y la DB). Tema/Fondo son estado de formulario local — no se
  * aplican en vivo (a diferencia del picker de Settings.jsx), porque este
  * modal puede estar editando un perfil que no es el activo.
+ *
+ * v1.6: elegir un personaje de anime en `AvatarPicker` es una acción de un
+ * solo paso (confirmado con el usuario) — guarda YA y cierra el modal, sin
+ * pasar por el botón "Guardar". `saveForm` centraliza esa lógica (misma
+ * validación/error/cierre que el submit normal) para no duplicarla: la
+ * usan tanto el submit del formulario como `handleSelectCharacter`. Los
+ * otros dos modos de avatar (Inicial+color, Subir imagen) siguen usando el
+ * `onChange` de siempre — solo quedan "en borrador" hasta pulsar Guardar.
  */
 function ProfileFormModal({ open, onClose, accountId, initialValue, onSubmit, title }) {
   const [form, setForm] = useState(initialValue || EMPTY_VALUE)
@@ -38,22 +47,35 @@ function ProfileFormModal({ open, onClose, accountId, initialValue, onSubmit, ti
     }
   }, [open, initialValue])
 
-  const handleSubmit = async (event) => {
-    event.preventDefault()
-    if (!form.nombre.trim()) {
+  const saveForm = async (values) => {
+    if (!values.nombre.trim()) {
       setError('Ponle un nombre a este perfil.')
       return
     }
     setError(null)
     setSaving(true)
     try {
-      await onSubmit(form)
+      await onSubmit(values)
       onClose()
     } catch (err) {
       setError(err.message)
     } finally {
       setSaving(false)
     }
+  }
+
+  const handleSubmit = (event) => {
+    event.preventDefault()
+    saveForm(form)
+  }
+
+  const handleSelectCharacter = async (character) => {
+    const merged = { ...form, avatar: character.image, tipoAvatar: AVATAR_TYPES.CHARACTER }
+    setForm(merged)
+    // No bloquea ni cancela el guardado si esto falla — "recordar el uso"
+    // es un beneficio secundario, no la acción principal del usuario.
+    recordAvatarUse(accountId, character)
+    await saveForm(merged)
   }
 
   return (
@@ -64,6 +86,7 @@ function ProfileFormModal({ open, onClose, accountId, initialValue, onSubmit, ti
           nombre={form.nombre}
           value={form}
           onChange={(patch) => setForm((prev) => ({ ...prev, ...patch }))}
+          onSelectAndClose={handleSelectCharacter}
         />
 
         <FormField

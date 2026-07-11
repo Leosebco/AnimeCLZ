@@ -252,3 +252,17 @@ export const MIN_SCORE_OPTIONS = [
   { value: '7', label: '7+' },
   { value: '6', label: '6+' },
 ]
+
+// Compartido por Filters.jsx (Buscar) y AdvancedFiltersPanel.jsx (Explorar) —
+// se calcula por función, no una constante estática, para que "el año en
+// curso" no quede congelado en el año del build.
+export function getYearOptions() {
+  const currentYear = new Date().getFullYear()
+  return [
+    { value: '', label: 'Todos los años' },
+    ...Array.from({ length: currentYear - 1990 + 1 }, (_, i) => {
+      const year = currentYear - i
+      return { value: String(year), label: String(year) }
+    }),
+  ]
+}

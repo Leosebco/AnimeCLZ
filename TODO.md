@@ -226,6 +226,70 @@
 
 ---
 
+## v1.5.1 — Bug real corregido: crash al abrir el modal de perfil
+
+- [x] `A <Transition.Child /> is used but it is missing a parent <Transition />` al abrir "Crear Perfil"/"Editar" — causa raíz: `Modal.jsx` pasaba un prop `transition` (Framer Motion) que Headless UI intercepta como su propio flag interno en `DialogPanel`/`DialogBackdrop`. Corregido embebiendo `transition` dentro de cada objeto `animate`/`exit` en vez de como prop de nivel superior.
+- [x] Mismo patrón corregido preventivamente en `Select.jsx`/`ListboxOptions` y `AccountMenu.jsx`/`MenuItems`.
+- [x] Warning real de Framer Motion corregido de paso: `Hero.jsx` tenía dos hijos directos dentro de `AnimatePresence mode="wait"` (solo admite uno) — consolidados en un único wrapper por slide.
+
+---
+
+## v1.6 — Buscador inteligente de avatares (personaje de anime)
+
+- [x] Bug real corregido: `getCharacterAnime` pedía el endpoint equivocado de Jikan (`/characters/{id}`, sin relación de anime) — siempre devolvía `null`. Corregido a `/characters/{id}/anime`.
+- [x] Arquitectura `AvatarSearchService`: AniList (GraphQL) primero, Jikan como respaldo si falla o da 0 resultados — verificado en vivo con los 3 ejemplos del pedido (Naruto/Gojo/Frieren).
+- [x] Un solo buscador detecta anime o personaje sin pedirle al usuario que elija — una consulta GraphQL con dos ramas fusionadas, sin heurística.
+- [x] Búsqueda en tiempo real con debounce de 300ms; caché de 5 min reutilizando `hooks/useFetch.js`.
+- [x] Tarjetas modernas (`AvatarCandidateCard.jsx`): imagen, nombre, anime, rol, botón Seleccionar, estrella de favorito siempre visible; grid 2/3/5 columnas (mobile/tablet/desktop).
+- [x] Skeletons mientras carga; `EmptyState` si no hay resultados o ambas fuentes fallan — nunca `ErrorBoundary`.
+- [x] "Avatares recientes" y "Favoritos" (tabla `avatar_history`, migración 0022, por cuenta) — se muestran cuando el buscador está vacío.
+- [x] "Seleccionar" guarda y cierra el modal en un solo paso (confirmado con el usuario) — `ProfileFormModal.jsx` extrajo `saveForm()` reutilizable; los otros dos modos de avatar no cambiaron.
+- [x] Animaciones con Framer Motion: entrada escalonada, hover/tap, transición Recientes↔Resultados (un solo hijo por `AnimatePresence`).
+- [ ] Corrección de alcance: el pedido decía `tipo_avatar = 'anime'`; se mantuvo `'personaje'` (el valor real de la columna, protegido por CHECK constraint) — ver ROADMAP.md.
+
+---
+
+## v1.7 — Búsqueda global, Home móvil y scroll entre páginas
+
+- [x] Bug real corregido: `Search.jsx` solo buscaba anime (100% Jikan) — cero búsqueda de personajes en
+  toda la pantalla, y el mensaje de error era un string estático sin relación con la falla real.
+- [x] `services/searchService.js` (nuevo): `searchAll(query, filters, signal)` → `{ anime, characters,
+  degraded }`, AniList primero para anime (con `idMal` para linkear al detalle real de Jikan sin
+  duplicarlo) y Jikan de respaldo; personajes reutiliza la cascada de v1.6 vía `characterSearchService.js`
+  (extraída, no duplicada) — `avatarSearchService.js` queda como re-export.
+- [x] `src/utils/apiCascade.js` (nuevo): centraliza el patrón `withFallback` (primario → respaldo → nunca
+  lanza salvo abort real) que antes solo vivía dentro de `avatarSearchService.js`.
+- [x] `degraded` distingue "cero resultados reales" de "las dos fuentes cayeron a la vez" — nunca se
+  muestra un código de error técnico al usuario.
+- [x] `Search.jsx` rediseñada: barra + botón "Filtros" (abre `Filters.jsx` en el `Modal.jsx` existente) →
+  sin búsqueda activa, Búsquedas recientes (`localStorage`, nuevo `utils/recentSearches.js`) + Tendencias;
+  con búsqueda, secciones Anime/Personajes agrupadas. Paginación eliminada (Explorar sigue siendo la
+  pantalla de catálogo paginado).
+- [x] `Filters.jsx`: 8 géneros principales por defecto + botón "Ver todos".
+- [x] `NavbarSearch.jsx` usa `searchAll` — dropdown/overlay agrupado en Anime/Personajes.
+- [x] `AvatarCandidateCard.jsx` reutilizada (props de acción opcionales) para las tarjetas de personaje
+  del buscador general, sin duplicar el componente.
+- [x] Bug real corregido: `Hero.jsx` tenía `drag="x"` de Framer Motion envolviendo todo el contenido
+  (poster+título+sinopsis+botones) — en touch competía con el scroll vertical nativo. Ahora el drag solo
+  existe en desktop (nuevo `hooks/useIsDesktop.js`, generalizado del que vivía inline en `Modal.jsx`).
+- [x] `Hero.jsx` en mobile: altura pasa de fija (`92vh`/`620px`) a dependiente del contenido; puntos de
+  navegación pasan a flujo normal (debajo de los botones) en vez de `position: absolute` sobre contenido
+  centrado — resolvía el solape real reportado en viewports bajos. Desktop sin cambios visuales.
+- [x] Bug real corregido: `MovieRow.jsx` no definía `touch-action`/`overscroll-behavior` en el scroller —
+  el navegador no podía comprometerse con el eje horizontal y cedía terreno al scroll vertical de forma
+  inconsistente. Agregado `touch-action: pan-x` + `overscroll-behavior-x: contain`.
+- [x] Bug real corregido: no existía ningún mecanismo de scroll-restauración en todo el proyecto — nuevo
+  `components/ScrollToTop.jsx`, montado una vez en `AppRouter.jsx` (cubre también `AdminLayout`), con
+  `behavior: 'instant'` explícito (el `scroll-behavior: smooth` global del sprint móvil lo hubiera animado).
+- [x] `Footer.jsx` suma `.safe-bottom` (utilidad existente desde el sprint móvil, sin uso hasta ahora).
+- [x] Auditoría dirigida confirmó (por grep, no suposición) que el único candidato real a overflow
+  horizontal de página era el `drag` del Hero, ya resuelto — no se encontró otro uso de `drag` en el resto
+  del código.
+- [ ] Traducir el vocabulario completo de filtros de Jikan a enums de AniList — fuera de alcance; con
+  filtros restrictivos activos, Jikan sigue siendo la fuente primaria (AniList queda de respaldo igual).
+
+---
+
 ## Sprint 4 (superado por v0.9 — hecho con Supabase, no Firebase)
 
 - [x] ~~Firebase~~ → Supabase. Ver v0.9.

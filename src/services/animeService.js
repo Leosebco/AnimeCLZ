@@ -331,9 +331,15 @@ export async function searchCharacters(query, signal) {
   }))
 }
 
-// Solo se llama al confirmar un personaje elegido en AvatarPicker — para
-// mostrar "Naruto Uzumaki — Naruto" antes de guardar, no en el grid.
+// Bug real corregido (v1.6): pedía `/characters/{id}` (el recurso plano),
+// que NUNCA trae relación con anime — confirmado pidiéndolo en vivo, solo
+// devuelve mal_id/name/images/about, nunca `anime`. Por eso esta función
+// devolvía `null` siempre, para cualquier personaje. El sub-recurso
+// correcto es `/characters/{id}/anime`, que sí trae la relación con `role`
+// incluido. Devuelve `{ anime, role }` en vez de un string suelto.
 export async function getCharacterAnime(id, signal) {
-  const response = await jikan.get(`/characters/${id}`, { signal })
-  return response.data.data.anime?.[0]?.anime?.title || null
+  const response = await jikan.get(`/characters/${id}/anime`, { signal })
+  const entry = response.data.data?.[0]
+  if (!entry) return { anime: null, role: null }
+  return { anime: entry.anime?.title || null, role: entry.role || null }
 }

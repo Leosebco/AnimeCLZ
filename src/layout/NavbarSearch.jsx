@@ -6,8 +6,10 @@ import Skeleton from '@/components/ui/Skeleton'
 import EmptyState from '@/components/ui/EmptyState'
 import useFetch from '@/hooks/useFetch'
 import useDebounce from '@/hooks/useDebounce'
-import { quickSearchAnime } from '@/providers/AnimeProvider'
+import { searchAll } from '@/services/searchService'
 import { ROUTES, animeDetailPath } from '@/constants'
+
+const EMPTY_RESULTS = { anime: [], characters: [], degraded: false }
 
 /**
  * Expanding, animated search trigger for the Navbar. Dos variantes según
@@ -31,10 +33,12 @@ function NavbarSearch() {
   const containerRef = useRef(null)
   const navigate = useNavigate()
 
-  const { data: results, loading } = useFetch(
-    (signal) => (trimmedQuery ? quickSearchAnime(trimmedQuery, signal) : Promise.resolve([])),
+  const { data, loading } = useFetch(
+    (signal) => (trimmedQuery ? searchAll(trimmedQuery, {}, signal) : Promise.resolve(EMPTY_RESULTS)),
     [trimmedQuery],
   )
+  const results = data ?? EMPTY_RESULTS
+  const hasResults = results.anime.length > 0 || results.characters.length > 0
 
   useEffect(() => {
     if (!expanded) return
@@ -88,33 +92,63 @@ function NavbarSearch() {
       )
     }
 
-    if (results?.length) {
+    if (hasResults) {
       return (
         <>
-          {results.map((anime) => (
-            <Link
-              key={anime.id}
-              to={animeDetailPath(anime.id)}
-              onClick={handleResultClick}
-              className="flex items-center gap-3 rounded-xl p-1.5 transition-colors hover:bg-hover"
-            >
-              <img
-                src={anime.posterSmall || anime.poster}
-                alt=""
-                loading="lazy"
-                className="h-14 w-10 shrink-0 rounded-md object-cover"
-              />
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-text">{anime.title}</p>
-                {typeof anime.score === 'number' && (
-                  <p className="flex items-center gap-1 text-xs text-text-secondary">
-                    <Star size={11} className="text-primary" fill="currentColor" />
-                    {anime.score.toFixed(1)}
-                  </p>
-                )}
-              </div>
-            </Link>
-          ))}
+          {results.anime.length > 0 && (
+            <div>
+              <p className="px-1.5 pb-1 text-[11px] font-semibold uppercase tracking-wide text-text-secondary">
+                Anime
+              </p>
+              {results.anime.slice(0, 4).map((anime) => (
+                <Link
+                  key={anime.id}
+                  to={animeDetailPath(anime.id)}
+                  onClick={handleResultClick}
+                  className="flex items-center gap-3 rounded-xl p-1.5 transition-colors hover:bg-hover"
+                >
+                  <img
+                    src={anime.posterSmall || anime.poster}
+                    alt=""
+                    loading="lazy"
+                    className="h-14 w-10 shrink-0 rounded-md object-cover"
+                  />
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-text">{anime.title}</p>
+                    {typeof anime.score === 'number' && (
+                      <p className="flex items-center gap-1 text-xs text-text-secondary">
+                        <Star size={11} className="text-primary" fill="currentColor" />
+                        {anime.score.toFixed(1)}
+                      </p>
+                    )}
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
+
+          {results.characters.length > 0 && (
+            <div className={results.anime.length > 0 ? 'mt-2' : undefined}>
+              <p className="px-1.5 pb-1 text-[11px] font-semibold uppercase tracking-wide text-text-secondary">
+                Personajes
+              </p>
+              {results.characters.slice(0, 3).map((character) => (
+                <div key={character.id} className="flex items-center gap-3 rounded-xl p-1.5">
+                  <img
+                    src={character.image}
+                    alt=""
+                    loading="lazy"
+                    className="h-14 w-10 shrink-0 rounded-md object-cover"
+                  />
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-text">{character.name}</p>
+                    {character.anime && <p className="truncate text-xs text-text-secondary">{character.anime}</p>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
           <button
             type="button"
             onClick={goToFullResults}

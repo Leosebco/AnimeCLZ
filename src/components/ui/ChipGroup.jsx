@@ -19,7 +19,7 @@ function ChipGroup({ options, value, onChange, ariaLabel, layoutId }) {
             onClick={() => onChange(active ? '' : option.value)}
             aria-pressed={active}
             className={cn(
-              'relative rounded-full border px-3.5 py-1.5 text-sm transition-colors',
+              'relative flex min-h-11 items-center rounded-full border px-3.5 py-1.5 text-sm transition-colors',
               active
                 ? 'border-transparent text-white'
                 : 'border-border text-text-secondary hover:border-primary/50 hover:text-text',

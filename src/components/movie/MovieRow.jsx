@@ -108,7 +108,7 @@ function MovieRow({ title, movies, loading, error, onRetry, emptyState }) {
 
           <div
             ref={scrollerRef}
-            className="no-scrollbar flex gap-5 overflow-x-auto scroll-smooth px-4 pb-2 sm:px-6 lg:px-8"
+            className="no-scrollbar flex gap-5 overflow-x-auto scroll-smooth px-4 pb-2 [touch-action:pan-x] [overscroll-behavior-x:contain] sm:px-6 lg:px-8"
           >
             {movies.map((movie, index) => (
               <motion.div

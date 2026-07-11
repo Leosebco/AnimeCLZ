@@ -5,6 +5,7 @@ import ProtectedRoute from '@/layout/ProtectedRoute'
 import AdminLayout from '@/layout/admin/AdminLayout'
 import Container from '@/components/ui/Container'
 import Skeleton from '@/components/ui/Skeleton'
+import ScrollToTop from '@/components/ScrollToTop'
 import { ROUTES, STAFF_ROLES } from '@/constants'
 
 // Route-level code splitting: each page ships in its own chunk and only
@@ -67,6 +68,7 @@ function RouteFallback() {
 function AppRouter() {
   return (
     <Suspense fallback={<RouteFallback />}>
+      <ScrollToTop />
       <Routes>
         <Route path={ROUTES.LANDING} element={<Landing />} />
         <Route path={ROUTES.LOGIN} element={<Login />} />

@@ -1,10 +1,14 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
 import { Loader2, Search, UploadCloud, User, Wand2 } from 'lucide-react'
 import ProfileAvatar from './ProfileAvatar'
-import Button from '@/components/ui/Button'
+import AvatarCandidateCard from './AvatarCandidateCard'
 import Skeleton from '@/components/ui/Skeleton'
+import EmptyState from '@/components/ui/EmptyState'
 import useDebounce from '@/hooks/useDebounce'
-import { getCharacterAnime, searchCharacters } from '@/providers/AnimeProvider'
+import useFetch from '@/hooks/useFetch'
+import { searchAvatarCandidates } from '@/services/avatarSearchService'
+import { listAvatarHistory, setAvatarFavorite } from '@/services/avatarHistoryService'
 import { uploadAvatarImage } from '@/services/avatarService'
 import { AVATAR_TYPES, PROFILE_COLORS } from '@/constants'
 import { cn } from '@/utils/cn'
@@ -15,54 +19,118 @@ const TABS = [
   { value: AVATAR_TYPES.CHARACTER, label: 'Personaje de anime', icon: User },
 ]
 
+const CARD_GRID = 'grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5'
+
+const gridVariants = {
+  hidden: {},
+  visible: { transition: { staggerChildren: 0.03 } },
+}
+
 /**
  * Selector de avatar embebido en ProfileFormModal (no es su propio modal —
  * anidar un Dialog dentro de otro complica el foco sin necesidad). Tres
  * modos: color + inicial (por defecto, sin imagen), imagen propia
- * (Supabase Storage, ver avatarService) o personaje de Jikan.
+ * (Supabase Storage, ver avatarService) o personaje de anime.
  *
- * El grid de personajes solo muestra imagen + nombre — `/characters` (la
- * búsqueda global) no trae el anime en la respuesta de lista, a diferencia
- * de `/anime/{id}/characters`. El anime real se resuelve con una sola
- * llamada extra (getCharacterAnime) recién cuando el usuario elige uno,
- * no para los 12 resultados a la vez.
+ * v1.6 — "Personaje de anime" reescrito como buscador inteligente: un solo
+ * input detecta si el término es un anime o un personaje (ver
+ * avatarSearchService.js — AniList primero, Jikan de respaldo), muestra
+ * "Favoritos"/"Avatares recientes" cuando no hay búsqueda activa, y
+ * "Seleccionar" es una acción de un solo paso: guarda el perfil YA y
+ * cierra el modal (`onSelectAndClose`, confirmado con el usuario) — los
+ * otros dos modos siguen usando `onChange` (quedan en borrador hasta
+ * pulsar "Guardar").
  */
-function AvatarPicker({ accountId, nombre, value, onChange }) {
+function AvatarPicker({ accountId, nombre, value, onChange, onSelectAndClose }) {
   const [tab, setTab] = useState(value.tipoAvatar || AVATAR_TYPES.INITIAL)
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState(null)
 
   const [query, setQuery] = useState('')
-  const debouncedQuery = useDebounce(query, 400)
-  const [characters, setCharacters] = useState([])
-  const [searching, setSearching] = useState(false)
-  const [pendingCharacter, setPendingCharacter] = useState(null)
+  const debouncedQuery = useDebounce(query, 300)
+  const trimmedQuery = debouncedQuery.trim()
 
-  const hasQuery = tab === AVATAR_TYPES.CHARACTER && Boolean(debouncedQuery.trim())
+  const [selectingId, setSelectingId] = useState(null)
+  const [favoritePendingId, setFavoritePendingId] = useState(null)
+  const [history, setHistory] = useState([])
+  const [historyLoaded, setHistoryLoaded] = useState(false)
+
+  const isCharacterTab = tab === AVATAR_TYPES.CHARACTER
+
+  const {
+    data: searchResults,
+    loading: searching,
+    error: searchError,
+  } = useFetch(
+    (signal) => (trimmedQuery ? searchAvatarCandidates(trimmedQuery, signal) : Promise.resolve([])),
+    [trimmedQuery],
+    {
+      cacheKey: trimmedQuery ? `avatar-search:${trimmedQuery.toLowerCase()}` : undefined,
+      cacheTTL: 5 * 60 * 1000,
+    },
+  )
 
   useEffect(() => {
-    if (!hasQuery) return
+    if (!isCharacterTab || !accountId || historyLoaded) return
     let active = true
-    setSearching(true)
-    searchCharacters(debouncedQuery)
+    listAvatarHistory(accountId)
       .then((data) => {
-        if (active) setCharacters(data)
+        if (active) setHistory(data)
       })
       .catch(() => {
-        if (active) setCharacters([])
+        if (active) setHistory([])
       })
       .finally(() => {
-        if (active) setSearching(false)
+        if (active) setHistoryLoaded(true)
       })
     return () => {
       active = false
     }
-  }, [hasQuery, debouncedQuery])
+  }, [isCharacterTab, accountId, historyLoaded])
 
-  // Deriva en vez de "resetear" characters con un setState extra en el
-  // efecto de arriba: fuera de la pestaña de personajes o sin búsqueda, el
-  // grid visible es vacío sin necesidad de un segundo setState síncrono.
-  const visibleCharacters = hasQuery ? characters : []
+  // Un personaje ya marcado como favorito (guardado en avatar_history)
+  // debe mostrar la estrella llena incluso en resultados de búsqueda
+  // recién traídos, no solo en la vista de Favoritos.
+  const favoriteIds = useMemo(
+    () => new Set(history.filter((item) => item.isFavorite).map((item) => item.id)),
+    [history],
+  )
+  const decoratedResults = useMemo(
+    () => (searchResults || []).map((character) => ({ ...character, isFavorite: favoriteIds.has(character.id) })),
+    [searchResults, favoriteIds],
+  )
+  const favorites = useMemo(() => history.filter((item) => item.isFavorite), [history])
+  const recientes = useMemo(() => history.slice(0, 10), [history])
+
+  const handleToggleFavorite = async (character) => {
+    if (!accountId) return
+    setFavoritePendingId(character.id)
+    const nextFavorite = !character.isFavorite
+    try {
+      await setAvatarFavorite(accountId, character, nextFavorite)
+      setHistory((prev) => {
+        const exists = prev.some((item) => item.id === character.id)
+        if (exists) {
+          return prev.map((item) => (item.id === character.id ? { ...item, isFavorite: nextFavorite } : item))
+        }
+        return [{ ...character, isFavorite: nextFavorite, usedAt: new Date().toISOString() }, ...prev]
+      })
+    } catch {
+      // Acción secundaria — si falla, simplemente no se refleja; no
+      // bloquea nada más en el picker.
+    } finally {
+      setFavoritePendingId(null)
+    }
+  }
+
+  const handleSelect = async (character) => {
+    setSelectingId(character.id)
+    try {
+      await onSelectAndClose(character)
+    } finally {
+      setSelectingId(null)
+    }
+  }
 
   const handleFileChange = async (event) => {
     const file = event.target.files?.[0]
@@ -80,16 +148,22 @@ function AvatarPicker({ accountId, nombre, value, onChange }) {
     }
   }
 
-  const handlePickCharacter = async (character) => {
-    setPendingCharacter({ ...character, anime: undefined })
-    const anime = await getCharacterAnime(character.id).catch(() => null)
-    setPendingCharacter((prev) => (prev?.id === character.id ? { ...prev, anime } : prev))
-  }
-
-  const confirmCharacter = () => {
-    onChange({ avatar: pendingCharacter.image, tipoAvatar: AVATAR_TYPES.CHARACTER })
-    setPendingCharacter(null)
-  }
+  const renderCandidateGrid = (characters) => (
+    <motion.div className={CARD_GRID} variants={gridVariants} initial="hidden" animate="visible">
+      <AnimatePresence>
+        {characters.map((character) => (
+          <AvatarCandidateCard
+            key={character.id}
+            character={character}
+            onSelect={handleSelect}
+            selecting={selectingId === character.id}
+            onToggleFavorite={handleToggleFavorite}
+            favoritePending={favoritePendingId === character.id}
+          />
+        ))}
+      </AnimatePresence>
+    </motion.div>
+  )
 
   return (
     <div>
@@ -156,67 +230,84 @@ function AvatarPicker({ accountId, nombre, value, onChange }) {
         </div>
       )}
 
-      {tab === AVATAR_TYPES.CHARACTER && (
+      {isCharacterTab && (
         <div className="mt-4">
           <div className="relative">
-            <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-text-secondary" size={16} />
+            <Search
+              className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-text-secondary"
+              size={16}
+            />
             <input
               type="search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Buscar un personaje..."
-              className="w-full rounded-full border border-border bg-background py-2.5 pl-10 pr-4 text-sm text-text placeholder:text-text-secondary transition-colors duration-200 focus-visible:border-primary focus-visible:outline-2 focus-visible:outline-primary"
+              placeholder="Buscar un anime o personaje..."
+              className="w-full rounded-full border border-border bg-background py-2.5 pl-10 pr-4 text-base text-text placeholder:text-text-secondary transition-colors duration-200 focus-visible:border-primary focus-visible:outline-2 focus-visible:outline-primary sm:text-sm"
             />
           </div>
 
-          {searching && (
-            <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
-              {Array.from({ length: 8 }).map((_, index) => (
-                <Skeleton key={index} className="aspect-square rounded-xl" />
-              ))}
-            </div>
-          )}
-
-          {!searching && visibleCharacters.length > 0 && (
-            <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
-              {visibleCharacters.map((character) => (
-                <button
-                  key={character.id}
-                  type="button"
-                  onClick={() => handlePickCharacter(character)}
-                  className="group flex flex-col items-center gap-1 rounded-xl p-1.5 transition-colors hover:bg-hover"
+          <div className="mt-3">
+            <AnimatePresence mode="wait">
+              {trimmedQuery ? (
+                <motion.div
+                  key="results"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.15 }}
                 >
-                  <img
-                    src={character.image}
-                    alt={character.name}
-                    className="aspect-square w-full rounded-lg object-cover ring-1 ring-border transition-all group-hover:ring-primary"
-                  />
-                  <span className="w-full truncate text-center text-[11px] text-text-secondary">
-                    {character.name}
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
+                  {searching ? (
+                    <div className={CARD_GRID}>
+                      {Array.from({ length: 10 }).map((_, index) => (
+                        <Skeleton key={index} className="aspect-square rounded-xl" />
+                      ))}
+                    </div>
+                  ) : searchError ? (
+                    <EmptyState compact title="No pudimos buscar" description="Probá de nuevo en un momento." />
+                  ) : decoratedResults.length === 0 ? (
+                    <EmptyState compact title="Sin resultados" description="Probá con otro anime o personaje." />
+                  ) : (
+                    renderCandidateGrid(decoratedResults)
+                  )}
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="browse"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.15 }}
+                  className="flex flex-col gap-5"
+                >
+                  {favorites.length > 0 && (
+                    <section>
+                      <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-text-secondary">
+                        Favoritos
+                      </h4>
+                      {renderCandidateGrid(favorites)}
+                    </section>
+                  )}
 
-          {pendingCharacter && (
-            <div className="mt-3 flex items-center gap-3 rounded-xl border border-border bg-card p-3">
-              <img
-                src={pendingCharacter.image}
-                alt={pendingCharacter.name}
-                className="h-12 w-12 rounded-full object-cover"
-              />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium text-text">{pendingCharacter.name}</p>
-                <p className="truncate text-xs text-text-secondary">
-                  {pendingCharacter.anime === undefined ? 'Buscando el anime...' : pendingCharacter.anime || 'Anime no disponible'}
-                </p>
-              </div>
-              <Button size="sm" onClick={confirmCharacter}>
-                Usar
-              </Button>
-            </div>
-          )}
+                  {recientes.length > 0 && (
+                    <section>
+                      <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-text-secondary">
+                        Avatares recientes
+                      </h4>
+                      {renderCandidateGrid(recientes)}
+                    </section>
+                  )}
+
+                  {historyLoaded && favorites.length === 0 && recientes.length === 0 && (
+                    <EmptyState
+                      compact
+                      title="Buscá un anime o personaje"
+                      description="Escribí arriba para elegir un avatar — por ejemplo, 'Naruto' o 'Gojo'."
+                    />
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
         </div>
       )}
     </div>

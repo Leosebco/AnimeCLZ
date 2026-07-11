@@ -6,6 +6,7 @@ import Container from '@/components/ui/Container'
 import Button from '@/components/ui/Button'
 import LoadingState from '@/components/ui/LoadingState'
 import ErrorState from '@/components/ui/ErrorState'
+import { useIsDesktop } from '@/hooks/useIsDesktop'
 import { animeDetailPath, ROUTES, STATUS_LABELS } from '@/constants'
 import { useFavorites } from '@/context/FavoritesContext'
 import { useWatchLater } from '@/context/WatchLaterContext'
@@ -21,11 +22,24 @@ const SWIPE_THRESHOLD = 80
  * no stock imagery: the ambient background is the anime's own poster,
  * blurred, so a portrait image never has to be stretched into a landscape
  * banner Jikan doesn't provide.
+ *
+ * v1.7 — bug real corregido: el gesto de arrastre (`drag="x"`) envolvía
+ * TODO el contenido (poster+título+sinopsis+3 botones) — en touch, ese
+ * reconocedor de gestos de Framer Motion competía con el scroll vertical
+ * nativo de la página sobre un área enorme que incluía botones
+ * interactivos ("cuesta seguir bajando"/"captura el dedo" reportado por el
+ * usuario). Ahora el drag solo existe en desktop (`useIsDesktop`, mouse no
+ * compite con scroll táctil); mobile navega por autoplay + puntos, igual
+ * que antes. De paso, mobile deja de tener una altura fija (`92vh`/`620px`
+ * — "Hero demasiado grande") y los puntos pasan a flujo normal en vez de
+ * `position: absolute` sobre contenido centrado verticalmente (causa real
+ * de "líneas del slider entre los botones" en viewports bajos).
  */
 function Hero({ slides, loading, error, onRetry }) {
   const { isAuthenticated } = useAuth()
   const { isFavorite, toggleFavorite } = useFavorites()
   const { isInWatchLater, toggleWatchLater } = useWatchLater()
+  const isDesktop = useIsDesktop()
   const navigate = useNavigate()
   const [index, setIndex] = useState(0)
   const [paused, setPaused] = useState(false)
@@ -66,9 +80,12 @@ function Hero({ slides, loading, error, onRetry }) {
     action()
   }
 
+  const dotButtonClass = (active) =>
+    cn('h-1.5 rounded-full transition-all duration-300', active ? 'w-6 bg-primary' : 'w-1.5 bg-white/30 hover:bg-white/50')
+
   return (
     <section
-      className="relative h-[92vh] min-h-[620px] w-full overflow-hidden"
+      className="relative w-full overflow-hidden sm:h-[92vh] sm:min-h-[620px]"
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
     >
@@ -94,23 +111,14 @@ function Hero({ slides, loading, error, onRetry }) {
         </motion.div>
       </AnimatePresence>
 
-      <Container className="relative z-10 flex h-full items-center pb-28 pt-20">
+      <Container className="relative z-10 flex flex-col pb-8 pt-24 sm:h-full sm:justify-center sm:pb-28 sm:pt-20">
         <motion.div
-          drag={count > 1 ? 'x' : false}
+          drag={isDesktop && count > 1 ? 'x' : false}
           dragConstraints={{ left: 0, right: 0 }}
           dragElastic={0.12}
-          onDragEnd={handleDragEnd}
+          onDragEnd={isDesktop ? handleDragEnd : undefined}
           className="w-full"
         >
-          {/* AnimatePresence con mode="wait" solo admite un único hijo
-              directo (espera a que termine de salir antes de montar el que
-              entra) — antes, poster e info eran dos hijos directos
-              independientes, lo que producía el warning real "attempting to
-              animate multiple children... mode is set to wait". Ahora un
-              solo wrapper por slide (key={anime.id}) es el único hijo; el
-              fade de ese wrapper ya cubre visualmente a poster+info juntos,
-              y cada uno conserva su propio micro-efecto de entrada (scale/
-              slide) como animación anidada, no independiente. */}
           <AnimatePresence mode="wait">
             <motion.div
               key={anime.id}
@@ -129,7 +137,7 @@ function Hero({ slides, loading, error, onRetry }) {
                 initial={{ scale: 0.95 }}
                 animate={{ scale: 1 }}
                 transition={{ duration: 0.4, ease: 'easeOut' }}
-                className="aspect-[2/3] w-32 shrink-0 rounded-2xl object-cover ring-1 ring-border shadow-2xl sm:w-44 md:w-56"
+                className="aspect-[2/3] w-28 shrink-0 rounded-2xl object-cover ring-1 ring-border shadow-2xl sm:w-44 md:w-56"
               />
 
               <motion.div
@@ -138,15 +146,15 @@ function Hero({ slides, loading, error, onRetry }) {
                 transition={{ duration: 0.35, ease: 'easeOut' }}
                 className="max-w-2xl"
               >
-                <span className="mb-5 inline-flex items-center rounded-full border border-border bg-surface/50 px-3.5 py-1.5 text-xs uppercase tracking-widest text-text-secondary backdrop-blur-sm">
+                <span className="mb-4 inline-flex items-center rounded-full border border-border bg-surface/50 px-3.5 py-1.5 text-xs uppercase tracking-widest text-text-secondary backdrop-blur-sm sm:mb-5">
                   Destacado
                 </span>
 
-                <h1 className="line-clamp-2 font-display text-3xl font-bold leading-tight text-text sm:text-4xl lg:text-6xl">
+                <h1 className="line-clamp-2 font-display text-2xl font-bold leading-tight text-text sm:text-4xl lg:text-6xl">
                   {anime.title}
                 </h1>
 
-                <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-text-secondary">
+                <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-text-secondary sm:mt-4">
                   {typeof anime.score === 'number' && (
                     <span className="flex items-center gap-1 text-text">
                       <Star size={14} className="text-primary" fill="currentColor" />
@@ -159,7 +167,7 @@ function Hero({ slides, loading, error, onRetry }) {
                 </div>
 
                 {anime.genres?.length > 0 && (
-                  <div className="mt-4 flex flex-wrap gap-2">
+                  <div className="mt-3 hidden flex-wrap gap-2 sm:flex">
                     {anime.genres.slice(0, 4).map((genre) => (
                       <span
                         key={genre}
@@ -172,12 +180,12 @@ function Hero({ slides, loading, error, onRetry }) {
                 )}
 
                 {synopsis && (
-                  <p className="mt-6 line-clamp-4 max-w-xl text-sm leading-relaxed text-text-secondary sm:line-clamp-none sm:text-base">
+                  <p className="mt-4 line-clamp-3 max-w-xl text-sm leading-relaxed text-text-secondary sm:mt-6 sm:line-clamp-none sm:text-base">
                     {synopsis}
                   </p>
                 )}
 
-                <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+                <div className="mt-6 flex flex-col gap-3 sm:mt-8 sm:flex-row sm:flex-wrap sm:items-center">
                   <Button as={Link} to={animeDetailPath(anime.id)} size="lg" className="w-full sm:w-auto">
                     <Play size={18} fill="currentColor" />
                     Ver Ahora
@@ -207,11 +215,12 @@ function Hero({ slides, loading, error, onRetry }) {
             </motion.div>
           </AnimatePresence>
         </motion.div>
-      </Container>
 
-      {count > 1 && (
-        <>
-          <div className="absolute bottom-24 left-1/2 z-10 flex -translate-x-1/2 gap-2 sm:bottom-28">
+        {/* Puntos en mobile: flujo normal, debajo de los botones — nunca
+            `position: absolute` sobre contenido centrado (eso era la causa
+            real del solape "líneas del slider entre los botones"). */}
+        {count > 1 && (
+          <div className="mt-6 flex justify-center gap-2 sm:hidden">
             {slides.map((slide, slideIndex) => (
               <button
                 key={slide.id}
@@ -219,10 +228,27 @@ function Hero({ slides, loading, error, onRetry }) {
                 aria-label={`Ir al destacado ${slideIndex + 1}`}
                 aria-current={slideIndex === index}
                 onClick={() => goTo(slideIndex)}
-                className={cn(
-                  'h-1.5 rounded-full transition-all duration-300',
-                  slideIndex === index ? 'w-6 bg-primary' : 'w-1.5 bg-white/30 hover:bg-white/50',
-                )}
+                className={cn('flex min-h-11 min-w-6 items-center justify-center')}
+              >
+                <span className={dotButtonClass(slideIndex === index)} />
+              </button>
+            ))}
+          </div>
+        )}
+      </Container>
+
+      {/* Desktop (sm+): puntos y miniaturas absolutos, como siempre. */}
+      {count > 1 && (
+        <>
+          <div className="absolute bottom-28 left-1/2 z-10 hidden -translate-x-1/2 gap-2 sm:flex">
+            {slides.map((slide, slideIndex) => (
+              <button
+                key={slide.id}
+                type="button"
+                aria-label={`Ir al destacado ${slideIndex + 1}`}
+                aria-current={slideIndex === index}
+                onClick={() => goTo(slideIndex)}
+                className={dotButtonClass(slideIndex === index)}
               />
             ))}
           </div>
