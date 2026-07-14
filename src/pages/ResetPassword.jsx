@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Loader2 } from 'lucide-react'
 import AuthCard from '@/components/auth/AuthCard'
@@ -21,6 +21,10 @@ function ResetPassword() {
   const [error, setError] = useState(null)
   const [submitting, setSubmitting] = useState(false)
   const [done, setDone] = useState(false)
+  // v2.8 — auditoría: ver Login.jsx, mismo riesgo de navegación tardía si
+  // el usuario se va de la página dentro de los 2000ms.
+  const redirectTimeoutRef = useRef(null)
+  useEffect(() => () => clearTimeout(redirectTimeoutRef.current), [])
 
   const handleSubmit = async (event) => {
     event.preventDefault()
@@ -35,7 +39,7 @@ function ResetPassword() {
     try {
       await updatePassword(password)
       setDone(true)
-      setTimeout(() => navigate(ROUTES.HOME, { replace: true }), 2000)
+      redirectTimeoutRef.current = setTimeout(() => navigate(ROUTES.HOME, { replace: true }), 2000)
     } catch (err) {
       setError(err.message)
     } finally {

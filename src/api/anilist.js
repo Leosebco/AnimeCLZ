@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { recordRetry } from '@/services/gateway/metrics'
 
 // AniList GraphQL — usado como fuente PRIMARIA para la búsqueda inteligente
 // de avatares (personaje de anime), con Jikan como respaldo si esto falla
@@ -24,6 +25,7 @@ api.interceptors.response.use(
 
     if (config && RETRYABLE_STATUS(status) && retryCount < MAX_RETRIES) {
       config.__retryCount = retryCount + 1
+      recordRetry({ source: 'anilist', status, isTimeout: false })
       await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** retryCount))
       return api(config)
     }

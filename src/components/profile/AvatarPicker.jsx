@@ -185,7 +185,7 @@ function AvatarPicker({ accountId, nombre, value, onChange, onSelectAndClose }) 
               className={cn(
                 'flex min-h-11 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
                 tab === option.value
-                  ? 'border-transparent bg-primary text-white'
+                  ? 'border-transparent bg-primary text-on-primary'
                   : 'border-border text-text-secondary hover:border-primary/50 hover:text-text',
               )}
             >

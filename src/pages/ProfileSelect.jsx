@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { Pencil, Plus, Trash2 } from 'lucide-react'
 import { AnimatePresence, motion } from 'framer-motion'
@@ -58,6 +58,10 @@ function ProfileSelect() {
   const [deletingProfile, setDeletingProfile] = useState(null)
   const [deleteError, setDeleteError] = useState(null)
   const [selectingId, setSelectingId] = useState(null)
+  // v2.8 — auditoría: ver Login.jsx, mismo riesgo de navegación tardía si
+  // el usuario se va de la página dentro de los SELECT_TRANSITION_MS.
+  const selectTimeoutRef = useRef(null)
+  useEffect(() => () => clearTimeout(selectTimeoutRef.current), [])
 
   const redirectTo = location.state?.from?.pathname || ROUTES.HOME
   const atProfileLimit = profiles.length >= MAX_PROFILES
@@ -68,7 +72,7 @@ function ProfileSelect() {
     setSelectingId(profileId)
     // Pequeña transición antes de navegar (pedido explícito v1.0) — en vez
     // de un salto instantáneo, se ve el perfil elegido "confirmarse".
-    setTimeout(() => {
+    selectTimeoutRef.current = setTimeout(() => {
       selectProfile(profileId)
       navigate(redirectTo, { replace: true })
     }, SELECT_TRANSITION_MS)

@@ -105,7 +105,7 @@ function Explore() {
           <button
             type="button"
             onClick={handleApplyDraft}
-            className="flex min-h-11 items-center gap-2 rounded-full bg-primary px-5 text-sm font-semibold text-white transition-colors hover:bg-primary-hover"
+            className="flex min-h-11 items-center gap-2 rounded-full bg-primary px-5 text-sm font-semibold text-on-primary transition-colors hover:bg-primary-hover"
           >
             Aplicar
           </button>

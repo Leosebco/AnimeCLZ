@@ -1,7 +1,7 @@
 import { cn } from '@/utils/cn'
 
 const VARIANTS = {
-  primary: 'bg-primary text-white hover:bg-primary-hover font-semibold',
+  primary: 'bg-primary text-on-primary hover:bg-primary-hover font-semibold',
   secondary: 'bg-card text-text hover:bg-hover border border-border',
   ghost: 'bg-transparent text-text-secondary hover:text-text hover:bg-hover',
 }

@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { Loader2 } from 'lucide-react'
+import { Loader2, Eye, EyeOff } from 'lucide-react'
 import AuthCard from '@/components/auth/AuthCard'
 import GoogleIcon from '@/components/auth/GoogleIcon'
+import LoginMascot from '@/components/auth/LoginMascot'
 import Button from '@/components/ui/Button'
 import FormField from '@/components/ui/FormField'
 import { useAuth } from '@/hooks/useAuth'
@@ -16,9 +17,22 @@ function Login() {
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState(null)
   const [submitting, setSubmitting] = useState(false)
   const [googleLoading, setGoogleLoading] = useState(false)
+  const [success, setSuccess] = useState(false)
+  // v2.5 — qué campo tiene foco ahora mismo, para que la mascota reaccione
+  // (ver LoginMascot.jsx). 'idle' cuando no hay foco en ningún campo.
+  const [focusedField, setFocusedField] = useState('idle')
+  // v2.8 — auditoría: `navigate()` disparaba igual desde un setTimeout sin
+  // limpiar si el usuario se iba de la página dentro de los 700ms (back
+  // button, otro link) — una navegación sorpresa llegaba tarde. El ref
+  // guarda el id para poder cancelarlo al desmontar.
+  const redirectTimeoutRef = useRef(null)
+  useEffect(() => () => clearTimeout(redirectTimeoutRef.current), [])
+
+  const mascotState = success ? 'success' : error ? 'error' : showPassword && focusedField === 'password' ? 'password-visible' : focusedField
 
   const handleSubmit = async (event) => {
     event.preventDefault()
@@ -26,12 +40,21 @@ function Login() {
     setSubmitting(true)
     try {
       await signInWithEmail({ email, password })
-      navigate(ROUTES.PROFILE_SELECT, { replace: true, state: { from } })
+      setSuccess(true)
+      // Espera a que se vea la animación de éxito de la mascota (ver
+      // LoginMascot.jsx) antes de navegar — sin este delay, `navigate()`
+      // desmonta la página de inmediato y el usuario nunca llega a verla.
+      // `submitting` queda en true a propósito durante la espera (evita un
+      // reenvío y mantiene el botón/loader consistentes hasta que
+      // realmente se navega) — solo se limpia en el catch de abajo.
+      redirectTimeoutRef.current = setTimeout(() => {
+        navigate(ROUTES.PROFILE_SELECT, { replace: true, state: { from } })
+      }, 700)
+      return
     } catch (err) {
       setError(err.message)
-    } finally {
-      setSubmitting(false)
     }
+    setSubmitting(false)
   }
 
   const handleGoogle = async () => {
@@ -49,6 +72,7 @@ function Login() {
     <AuthCard
       title="Inicia sesión"
       subtitle="Accede a tu Mi Lista, favoritos y perfil."
+      mascot={<LoginMascot state={mascotState} />}
       footer={
         <>
           ¿No tienes cuenta?{' '}
@@ -83,14 +107,29 @@ function Login() {
           required
           value={email}
           onChange={(event) => setEmail(event.target.value)}
+          onFocus={() => setFocusedField('username')}
+          onBlur={() => setFocusedField('idle')}
         />
         <FormField
           label="Contraseña"
-          type="password"
+          type={showPassword ? 'text' : 'password'}
           autoComplete="current-password"
           required
           value={password}
           onChange={(event) => setPassword(event.target.value)}
+          onFocus={() => setFocusedField('password')}
+          onBlur={() => setFocusedField('idle')}
+          endAdornment={
+            <button
+              type="button"
+              onClick={() => setShowPassword((value) => !value)}
+              aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+              aria-pressed={showPassword}
+              className="flex min-h-9 min-w-9 items-center justify-center rounded-full text-text-secondary transition-colors hover:text-text"
+            >
+              {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+            </button>
+          }
         />
 
         <div className="-mt-1 text-right text-sm">

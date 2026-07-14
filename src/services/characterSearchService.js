@@ -129,39 +129,51 @@ async function jikanAnimeCharacters(animeId, anime, signal) {
 // ni rol — se muestra igual, sin esos dos campos (opcionales en la
 // tarjeta), en vez de hacer una llamada extra por resultado para
 // resolverlos (sería lento para un respaldo-de-un-respaldo).
+//
+// v2.4 — bug real de rendimiento corregido (ver auditoría del sprint): las
+// dos llamadas a Jikan de acá abajo se hacían en SECUENCIA (await, luego
+// otro await) — con Jikan degradado (retries de api/jikan.js, ~8.6s hasta
+// agotar el presupuesto de 4 intentos), una búsqueda que cae hasta este
+// respaldo pagaba esa espera DOS VECES (~17s) en vez de una. Confirmado en
+// vivo: "atack on titan" (typo real) tardó 17191ms; una consulta sin
+// ningún match ("xyzabc123nonexistent") tardó 19008ms — ambas cayendo por
+// las dos ramas (anime+personaje) del mismo buscador. `Promise.all` en vez
+// de dos `await` consecutivos deja que ambas llamadas compartan la espera
+// en vez de sumarla.
 async function searchViaJikan(query, signal) {
-  const results = []
+  const [animeCharacters, directCharacters] = await Promise.all([
+    (async () => {
+      try {
+        const { data: animeResults } = await searchAnime(query, { limit: 1 }, signal)
+        const bestMatch = animeResults?.[0]
+        if (!bestMatch) return []
+        return jikanAnimeCharacters(bestMatch.id, bestMatch.title, signal)
+      } catch (err) {
+        if (isAbortError(err)) throw err
+        devError('[characterSearchService] Jikan: búsqueda de anime falló:', err)
+        return []
+      }
+    })(),
+    (async () => {
+      try {
+        const characters = await searchCharacters(query, signal)
+        return characters.map((character) => ({
+          id: `jikan:${character.id}`,
+          source: 'jikan',
+          name: character.name,
+          image: character.image,
+          anime: null,
+          role: null,
+        }))
+      } catch (err) {
+        if (isAbortError(err)) throw err
+        devError('[characterSearchService] Jikan: búsqueda de personaje falló:', err)
+        return []
+      }
+    })(),
+  ])
 
-  try {
-    const { data: animeResults } = await searchAnime(query, { limit: 1 }, signal)
-    const bestMatch = animeResults?.[0]
-    if (bestMatch) {
-      const characters = await jikanAnimeCharacters(bestMatch.id, bestMatch.title, signal)
-      results.push(...characters)
-    }
-  } catch (err) {
-    if (isAbortError(err)) throw err
-    devError('[characterSearchService] Jikan: búsqueda de anime falló:', err)
-  }
-
-  try {
-    const characters = await searchCharacters(query, signal)
-    results.push(
-      ...characters.map((character) => ({
-        id: `jikan:${character.id}`,
-        source: 'jikan',
-        name: character.name,
-        image: character.image,
-        anime: null,
-        role: null,
-      })),
-    )
-  } catch (err) {
-    if (isAbortError(err)) throw err
-    devError('[characterSearchService] Jikan: búsqueda de personaje falló:', err)
-  }
-
-  return dedupeCharactersById(results)
+  return dedupeCharactersById([...animeCharacters, ...directCharacters])
 }
 
 export async function searchCharacterCandidates(query, signal, onFailure) {

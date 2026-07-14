@@ -16,6 +16,7 @@ export const ROUTES = {
   SETTINGS: '/configuracion',
   ABOUT: '/acerca',
   ANIME_DETAIL: '/anime/:id',
+  WATCH: '/anime/:id/ver/:episodeNumber',
   LOGIN: '/iniciar-sesion',
   REGISTER: '/crear-cuenta',
   FORGOT_PASSWORD: '/recuperar-contrasena',
@@ -129,6 +130,11 @@ export const PROFILE_BACKGROUNDS = [
 
 export function animeDetailPath(id) {
   return `/anime/${id}`
+}
+
+// v2.1 — Sistema de reproducción.
+export function watchPath(animeId, episodeNumber) {
+  return `/anime/${animeId}/ver/${episodeNumber}`
 }
 
 // Primary navigation, consumed by la Navbar. Kept as data (not JSX) so

@@ -1,11 +1,12 @@
 import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 import { devError } from '@/utils/logger'
+import syncManager from '@/services/sync/SyncManager'
 
 const GENERIC_ERROR = 'No pudimos cargar los perfiles de esta cuenta. Inténtalo nuevamente.'
 const SAVE_ERROR = 'No pudimos guardar el perfil. Inténtalo nuevamente.'
 
 const COLUMNS =
-  'id, account_id, nombre, avatar, tipo_avatar, color, rol, tema, fondo, activo, fecha_creacion, fecha_actualizacion'
+  'id, account_id, nombre, avatar, tipo_avatar, color, rol, tema, fondo, autoplay, activo, fecha_creacion, fecha_actualizacion'
 
 function fromRow(row) {
   return {
@@ -18,6 +19,7 @@ function fromRow(row) {
     rol: row.rol,
     tema: row.tema,
     fondo: row.fondo,
+    autoplay: row.autoplay,
     activo: row.activo,
     fechaCreacion: row.fecha_creacion,
     fechaActualizacion: row.fecha_actualizacion,
@@ -70,14 +72,14 @@ export async function createProfile(accountId, { nombre, avatar, tipoAvatar, col
   return fromRow(data)
 }
 
-// `tema`/`fondo` son opcionales — ThemeContext llama a esto con solo
-// `{ tema }` al cambiar de paleta; los campos no presentes en el objeto no
-// se tocan (Supabase solo actualiza las columnas incluidas en el payload).
-export async function updateProfile(id, { nombre, avatar, tipoAvatar, color, tema, fondo }) {
-  if (!isSupabaseConfigured) throw new Error(SAVE_ERROR)
+// `tema`/`fondo`/`autoplay` son opcionales — ThemeContext llama a esto con
+// solo `{ tema }` al cambiar de paleta, Settings.jsx con solo `{ autoplay }`
+// al cambiar esa preferencia; los campos no presentes en el objeto no se
+// tocan (Supabase solo actualiza las columnas incluidas en el payload).
+async function rawUpdateProfile(id, { nombre, avatar, tipoAvatar, color, tema, fondo, autoplay }) {
   const { data, error } = await supabase
     .from('profiles_account')
-    .update({ nombre, avatar, tipo_avatar: tipoAvatar, color, tema, fondo })
+    .update({ nombre, avatar, tipo_avatar: tipoAvatar, color, tema, fondo, autoplay })
     .eq('id', id)
     .select(COLUMNS)
     .single()
@@ -86,6 +88,44 @@ export async function updateProfile(id, { nombre, avatar, tipoAvatar, color, tem
     throw new Error(SAVE_ERROR)
   }
   return fromRow(data)
+}
+
+// v3.1 — Sync Engine: repite una edición de perfil encolada al volver la
+// conexión. `rawUpdateProfile` solo destructura las claves que le
+// interesan de su segundo argumento — pasarle el `payload` entero (que
+// además trae `id`) es inofensivo, esa clave de más se ignora.
+syncManager.registerHandler('profile:update', (payload) => rawUpdateProfile(payload.id, payload))
+
+/**
+ * v3.1 — Sync Engine: con conexión, comportamiento idéntico a siempre
+ * (update inmediato, devuelve la fila real). Sin conexión, encola los
+ * campos (`merge: true` — dos ediciones offline distintas, ej. tema y
+ * autoplay, se fusionan en una sola entrada en vez de que la segunda
+ * pierda la primera) y resuelve con `{ id, ...fields }` en vez de la fila
+ * completa — `ProfileContext.updateProfileById` fusiona esto sobre el
+ * perfil YA conocido en vez de reemplazarlo entero, así que el resto de
+ * los campos (rol/activo/avatar/etc.) no se pierden mientras la operación
+ * sigue encolada.
+ *
+ * `payload` va PLANO (`{ id, ...fields }`), no anidado (`{ id, fields }`)
+ * — `offlineQueue.upsertEntry`'s `merge: true` hace un merge superficial
+ * (`{...existing.payload, ...payload}`); si `fields` fuera un objeto
+ * anidado, la segunda edición offline reemplazaría el objeto `fields`
+ * completo de la primera en vez de combinarse campo por campo.
+ */
+export async function updateProfile(id, fields) {
+  if (!isSupabaseConfigured) throw new Error(SAVE_ERROR)
+  return syncManager.run(
+    {
+      type: 'profile:update',
+      key: `profile:${id}`,
+      payload: { id, ...fields },
+      merge: true,
+      ownErrorMessage: SAVE_ERROR,
+      optimisticResult: { id, ...fields },
+    },
+    () => rawUpdateProfile(id, fields),
+  )
 }
 
 // Baja lógica (activo = false) en vez de DELETE: más simple de revertir y

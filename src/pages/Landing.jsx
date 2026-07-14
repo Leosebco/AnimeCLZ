@@ -16,20 +16,29 @@ import {
   Clapperboard,
   Palette,
   UserRound,
+  ChevronDown,
+  Compass,
+  Map,
 } from 'lucide-react'
 import Container from '@/components/ui/Container'
 import Button from '@/components/ui/Button'
 import Skeleton from '@/components/ui/Skeleton'
 import Footer from '@/layout/Footer'
+import HeroPosterStack from '@/components/landing/HeroPosterStack'
+import HowItWorks from '@/components/landing/HowItWorks'
+import RoadmapTimeline from '@/components/landing/RoadmapTimeline'
+import AnimatedStat from '@/components/landing/AnimatedStat'
 import useFetch from '@/hooks/useFetch'
 import { useAuth } from '@/hooks/useAuth'
-import { getTopRated } from '@/providers/AnimeProvider'
+import { getTopRated, getTrending } from '@/providers/AnimeProvider'
 import { ROUTES, GENRES, THEMES } from '@/constants'
 
 const SECTIONS = [
   { id: 'caracteristicas', label: 'Características', icon: LayoutDashboard },
+  { id: 'como-funciona', label: 'Cómo funciona', icon: Compass },
   { id: 'capturas', label: 'Capturas', icon: Camera },
   { id: 'tecnologias', label: 'Tecnologías', icon: Code2 },
+  { id: 'roadmap', label: 'Roadmap', icon: Map },
   { id: 'preguntas-frecuentes', label: 'FAQ', icon: HelpCircle },
   { id: 'contacto', label: 'Contacto', icon: Mail },
 ]
@@ -164,7 +173,9 @@ function CatalogStats() {
           {stat.value === null ? (
             <Skeleton className="mx-auto h-8 w-16" />
           ) : (
-            <p className="font-display text-2xl font-bold text-primary sm:text-3xl">{stat.value}</p>
+            <p className="font-display text-2xl font-bold text-primary sm:text-3xl">
+              <AnimatedStat value={stat.value} />
+            </p>
           )}
           <p className="mt-1.5 text-xs text-text-secondary sm:text-sm">{stat.label}</p>
         </div>
@@ -180,10 +191,49 @@ function CatalogStats() {
  * Footer reutilizado, para no mostrar enlaces que requieren sesión
  * (Favoritos/Mi Lista/Historial) a un visitante sin cuenta.
  */
+// Posiciones fijas de las partículas del Hero (v2.5) — un puñado (no
+// cientos), transform/opacity únicamente (GPU, sin repintar layout),
+// "suaves" tal como pide docs/09: nunca saturar ni distraer del texto.
+const PARTICLES = [
+  { top: '15%', left: '8%', size: 5, duration: 9, delay: 0 },
+  { top: '68%', left: '14%', size: 3, duration: 11, delay: 1.2 },
+  { top: '30%', left: '92%', size: 4, duration: 10, delay: 0.6 },
+  { top: '78%', left: '88%', size: 3, duration: 13, delay: 2 },
+  { top: '10%', left: '48%', size: 3, duration: 8, delay: 1.6 },
+  { top: '85%', left: '52%', size: 4, duration: 12, delay: 0.3 },
+]
+
+function HeroParticles() {
+  return (
+    <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden" aria-hidden>
+      {PARTICLES.map((particle, index) => (
+        <motion.span
+          key={index}
+          className="absolute rounded-full bg-primary/40"
+          style={{ top: particle.top, left: particle.left, width: particle.size, height: particle.size }}
+          animate={{ y: [0, -18, 0], opacity: [0.2, 0.7, 0.2] }}
+          transition={{ duration: particle.duration, delay: particle.delay, repeat: Infinity, ease: 'easeInOut' }}
+        />
+      ))}
+    </div>
+  )
+}
+
 function Landing() {
   const { isAuthenticated } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
+
+  // Pósters reales para la pila del Hero (v2.5) — reusa `getTrending`
+  // (AnimeProvider, sin tocar ProviderManager) tal como ya hacía
+  // `CatalogStats` con `getTopRated`. Nunca una imagen inventada: si el
+  // fetch todavía no resolvió, `HeroPosterStack` simplemente no renderiza
+  // nada hasta tener datos reales.
+  const { data: heroAnime } = useFetch((signal) => getTrending({ limit: 6 }, signal), [], {
+    cacheKey: 'landing:hero-posters',
+    cacheTTL: 30 * 60 * 1000,
+  })
+  const heroPosters = (heroAnime?.data || []).filter((anime) => anime.poster)
 
   useEffect(() => {
     if (!location.hash) return
@@ -194,14 +244,22 @@ function Landing() {
   const handleExplore = () => {
     navigate(isAuthenticated ? ROUTES.HOME : ROUTES.LOGIN)
   }
+  const handleBrowseCatalog = () => {
+    navigate(isAuthenticated ? ROUTES.EXPLORE : ROUTES.LOGIN)
+  }
+  const scrollToFeatures = () => {
+    document.getElementById('caracteristicas')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
 
   return (
     <div className="flex min-h-screen flex-col bg-background text-text">
       <LandingHeader />
 
-      {/* Hero — fondo animado con blobs de gradiente suaves (nunca a toda
-          pantalla saturado, ver DESIGN.md) */}
-      <section className="relative overflow-hidden px-4 pb-24 pt-24 text-center sm:pt-32">
+      {/* Hero cinematográfico (v2.5) — blobs de gradiente + partículas
+          suaves de fondo, pila de pósters reales con profundidad al lado
+          del texto (nunca a pantalla completa saturada, ver
+          docs/09_UI_UX_DESIGN_SYSTEM.md). */}
+      <section className="relative overflow-hidden px-4 pb-20 pt-24 sm:pt-32">
         <motion.div
           className="pointer-events-none absolute -top-40 left-1/4 -z-10 h-[30rem] w-[30rem] rounded-full bg-primary/25 blur-3xl"
           animate={{ x: [0, 50, 0], y: [0, 30, 0] }}
@@ -214,46 +272,74 @@ function Landing() {
           transition={{ duration: 20, repeat: Infinity, ease: 'easeInOut' }}
           aria-hidden
         />
+        <HeroParticles />
 
-        <motion.span
-          initial={{ opacity: 0, y: -8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4 }}
-          className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3.5 py-1.5 text-xs font-medium text-text-secondary"
-        >
-          <Sparkles size={13} className="text-primary" aria-hidden />
-          Catálogo real, actualizado en vivo
-        </motion.span>
+        <div className="mx-auto grid max-w-5xl grid-cols-1 items-center gap-12 sm:grid-cols-2">
+          <div className="text-center sm:text-left">
+            <motion.span
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4 }}
+              className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3.5 py-1.5 text-xs font-medium text-text-secondary"
+            >
+              <Sparkles size={13} className="text-primary" aria-hidden />
+              Catálogo real, actualizado en vivo
+            </motion.span>
 
-        <motion.h1
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.1 }}
-          className="mx-auto mt-6 max-w-2xl font-display text-4xl font-bold leading-tight text-text sm:text-6xl"
-        >
-          Tu próximo anime favorito empieza aquí
-        </motion.h1>
+            <motion.h1
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.1 }}
+              className="mx-auto mt-6 max-w-2xl font-display text-4xl font-bold leading-tight text-text sm:mx-0 sm:text-6xl"
+            >
+              Tu próximo anime favorito empieza aquí
+            </motion.h1>
 
-        <motion.p
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.2 }}
-          className="mx-auto mt-4 max-w-md text-sm text-text-secondary sm:text-base"
-        >
-          Explora, guarda y sigue anime — con datos reales y tu propio perfil.
-        </motion.p>
+            <motion.p
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.2 }}
+              className="mx-auto mt-4 max-w-md text-sm text-text-secondary sm:mx-0 sm:text-base"
+            >
+              Explora, guarda y sigue anime — con datos reales y tu propio perfil.
+            </motion.p>
 
-        <motion.div
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.3 }}
-          className="mt-9 flex justify-center"
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.3 }}
+              className="mt-9 flex flex-col justify-center gap-3 sm:flex-row sm:justify-start"
+            >
+              <Button size="lg" onClick={handleExplore}>
+                <Play size={18} fill="currentColor" />
+                Comenzar
+              </Button>
+              <Button size="lg" variant="secondary" onClick={handleBrowseCatalog}>
+                Explorar catálogo
+              </Button>
+            </motion.div>
+          </div>
+
+          <motion.div
+            initial={{ opacity: 0, scale: 0.94 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.6, delay: 0.15 }}
+          >
+            <HeroPosterStack posters={heroPosters} />
+          </motion.div>
+        </div>
+
+        <motion.button
+          type="button"
+          onClick={scrollToFeatures}
+          aria-label="Ver más"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1, y: [0, 6, 0] }}
+          transition={{ opacity: { duration: 0.5, delay: 0.6 }, y: { duration: 1.6, repeat: Infinity, ease: 'easeInOut' } }}
+          className="mx-auto mt-16 flex min-h-11 min-w-11 items-center justify-center rounded-full text-text-secondary transition-colors hover:text-text"
         >
-          <Button size="lg" onClick={handleExplore}>
-            <Play size={18} fill="currentColor" />
-            Explorar Anime
-          </Button>
-        </motion.div>
+          <ChevronDown size={22} aria-hidden />
+        </motion.button>
       </section>
 
       <Reveal className="px-4">
@@ -292,6 +378,17 @@ function Landing() {
                 </Reveal>
               ))}
             </div>
+          </section>
+
+          <section id="como-funciona" className="scroll-mt-24">
+            <Reveal>
+              <h2 className="text-center font-display text-2xl font-bold text-text sm:text-3xl">
+                Cómo funciona
+              </h2>
+            </Reveal>
+            <Reveal delay={0.1} className="mt-10">
+              <HowItWorks />
+            </Reveal>
           </section>
 
           <section id="estadisticas" className="scroll-mt-24">
@@ -352,6 +449,17 @@ function Landing() {
                   Proyecto individual — diseño, frontend y arquitectura completa.
                 </p>
               </div>
+            </Reveal>
+          </section>
+
+          <section id="roadmap" className="scroll-mt-24">
+            <Reveal>
+              <h2 className="text-center font-display text-2xl font-bold text-text sm:text-3xl">
+                Roadmap
+              </h2>
+            </Reveal>
+            <Reveal delay={0.1} className="mt-12">
+              <RoadmapTimeline />
             </Reveal>
           </section>
 

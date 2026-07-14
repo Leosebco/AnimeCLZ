@@ -50,7 +50,7 @@ function AccountMenu() {
         </Link>
         <Link
           to={ROUTES.REGISTER}
-          className="rounded-full bg-primary px-3.5 py-2 text-sm font-semibold text-white transition-colors hover:bg-primary-hover"
+          className="rounded-full bg-primary px-3.5 py-2 text-sm font-semibold text-on-primary transition-colors hover:bg-primary-hover"
         >
           Crear cuenta
         </Link>

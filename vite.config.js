@@ -52,8 +52,19 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
+        // v2.8 — auditoría de rendimiento: el chunk principal pesaba 598KB
+        // (Vite mismo lo marca como advertencia) porque, más allá de
+        // supabase, ninguna otra dependencia grande estaba separada.
+        // framer-motion y @headlessui/react se usan en casi toda la app
+        // (no son candidatos a code-splitting por ruta) — separarlas en su
+        // propio chunk de vendor no reduce los bytes totales de la primera
+        // carga, pero sí mejora el cacheo entre despliegues (no cambian de
+        // versión tan seguido como el código de la app) y permite descarga
+        // en paralelo en vez de un único archivo secuencial.
         manualChunks: {
           supabase: ['@supabase/supabase-js'],
+          motion: ['framer-motion'],
+          'headless-ui': ['@headlessui/react'],
         },
       },
     },

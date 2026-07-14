@@ -11,30 +11,39 @@ import Skeleton from '@/components/ui/Skeleton'
 import AvatarCandidateCard from '@/components/profile/AvatarCandidateCard'
 import useFetch from '@/hooks/useFetch'
 import useDebounce from '@/hooks/useDebounce'
-import { getTrending } from '@/providers/AnimeProvider'
+import { getTrending, getTopRated, getCurrentSeason, getRecommendations } from '@/providers/AnimeProvider'
 import { searchAll } from '@/services/searchService'
 import { getRecentSearches, addRecentSearch, clearRecentSearches } from '@/utils/recentSearches'
+import { useProfile } from '@/hooks/useProfile'
 import { ORDER_OPTIONS } from '@/constants'
 
 const CHARACTER_GRID = 'grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5'
 
 /**
- * Rediseño v1.7: barra de búsqueda → Tendencias/Búsquedas recientes (solo
- * sin una búsqueda activa) → botón "Filtros" (abre `Filters.jsx` dentro del
- * `Modal.jsx` ya existente, no un drawer nuevo) → resultados agrupados en
- * "Anime" y "Personajes" (`searchService.searchAll`, AniList primero con
- * Jikan de respaldo — ver ese archivo). Sin paginación: una búsqueda de
- * texto combinando dos fuentes ya trae un conjunto acotado y bien
- * ordenado por relevancia (mismo criterio que AniList/Crunchyroll, que
- * tampoco paginan resultados de búsqueda en profundidad) — Explorar sigue
+ * Rediseño v1.7, motor híbrido desde v2.4: barra de búsqueda → Tendencias/
+ * Top Rated/Temporada/Recomendados + Búsquedas recientes (solo sin una
+ * búsqueda activa, ver v2.4 más abajo) → botón "Filtros" (abre
+ * `Filters.jsx` dentro del `Modal.jsx` ya existente, con géneros en
+ * acordeón desde v2.4) → resultados agrupados en "Anime" y "Personajes"
+ * (`searchService.searchAll` — fusión real AniList+Jikan y ranking propio
+ * desde v2.4, ver ese archivo). Sin paginación: una búsqueda de texto
+ * combinando dos fuentes ya trae un conjunto acotado y bien ordenado por
+ * relevancia (mismo criterio que AniList/Crunchyroll) — Explorar sigue
  * siendo la pantalla para hojear el catálogo completo con paginación real.
+ *
+ * v2.4 — "Búsquedas recientes" pasa a ser por perfil (antes localStorage
+ * global, ver `utils/recentSearches.js`) y la pantalla vacía ahora también
+ * muestra Top Rated/Temporada/Recomendados junto a Tendencias — pedido
+ * explícito del sprint ("no dejar la pantalla vacía").
  */
 function Search() {
   const [searchParams] = useSearchParams()
+  const { activeProfile } = useProfile()
+  const profileId = activeProfile?.id
   const [query, setQuery] = useState(searchParams.get('q') || '')
   const [filters, setFilters] = useState({})
   const [filtersOpen, setFiltersOpen] = useState(false)
-  const [recentSearches, setRecentSearches] = useState(() => getRecentSearches())
+  const [recentSearches, setRecentSearches] = useState(() => getRecentSearches(profileId))
   const debouncedQuery = useDebounce(query, 300)
   const trimmedQuery = debouncedQuery.trim()
   const hasQuery = trimmedQuery.length > 0
@@ -61,7 +70,12 @@ function Search() {
     [trimmedQuery, filters.genre, filters.type, filters.status, filters.minScore, filters.year, filters.order],
     {
       cacheKey: hasQuery ? `search:${trimmedQuery}:${JSON.stringify(filters)}` : undefined,
-      cacheTTL: 3 * 60 * 1000,
+      // v2.4 — 10 minutos (antes 3): docs/11_SEARCH_ENGINE.md especifica
+      // "búsquedas repetidas: 10 minutos"; el motor híbrido nuevo paga
+      // siempre el costo de consultar AniList+Jikan (ver searchService.js),
+      // así que cachear más tiempo evita repetir ese costo por una
+      // consulta ya resuelta hace poco.
+      cacheTTL: 10 * 60 * 1000,
     },
   )
 
@@ -71,14 +85,46 @@ function Search() {
     { cacheKey: !hasQuery ? 'search:trending' : undefined, cacheTTL: 10 * 60 * 1000 },
   )
 
+  // v2.4 — Top Rated/Temporada/Recomendados: mismo criterio que Tendencias
+  // de arriba, reusando funciones que ya existían en animeService.js (sin
+  // tocar ProviderManager) — la pantalla vacía nunca debe sentirse vacía.
+  const { data: topRated, loading: topRatedLoading, error: topRatedError, refetch: refetchTopRated } = useFetch(
+    (signal) => (!hasQuery ? getTopRated({ limit: 12 }, signal) : Promise.resolve({ data: [] })),
+    [hasQuery],
+    { cacheKey: !hasQuery ? 'search:topRated' : undefined, cacheTTL: 10 * 60 * 1000 },
+  )
+  const { data: seasonal, loading: seasonalLoading, error: seasonalError, refetch: refetchSeasonal } = useFetch(
+    (signal) => (!hasQuery ? getCurrentSeason({ limit: 12 }, signal) : Promise.resolve({ data: [] })),
+    [hasQuery],
+    { cacheKey: !hasQuery ? 'search:seasonal' : undefined, cacheTTL: 10 * 60 * 1000 },
+  )
+  const {
+    data: recommended,
+    loading: recommendedLoading,
+    error: recommendedError,
+    refetch: refetchRecommended,
+  } = useFetch(
+    (signal) => (!hasQuery ? getRecommendations({ limit: 12 }, signal) : Promise.resolve({ data: [] })),
+    [hasQuery],
+    { cacheKey: !hasQuery ? 'search:recommended' : undefined, cacheTTL: 10 * 60 * 1000 },
+  )
+
+  // Recarga la lista guardada del perfil activo cada vez que cambia — sin
+  // esto, cambiar de perfil dejaría viendo las búsquedas recientes del
+  // perfil anterior hasta la próxima búsqueda (violaría "nunca compartir
+  // búsquedas entre perfiles").
   useEffect(() => {
-    if (hasQuery) setRecentSearches(addRecentSearch(trimmedQuery))
-  }, [trimmedQuery, hasQuery])
+    setRecentSearches(getRecentSearches(profileId))
+  }, [profileId])
+
+  useEffect(() => {
+    if (hasQuery) setRecentSearches(addRecentSearch(trimmedQuery, profileId))
+  }, [trimmedQuery, hasQuery, profileId])
 
   const handleQueryChange = (event) => setQuery(event.target.value)
   const handleFiltersChange = (next) => setFilters(next)
   const handleClearRecent = () => {
-    clearRecentSearches()
+    clearRecentSearches(profileId)
     setRecentSearches([])
   }
 
@@ -153,6 +199,27 @@ function Search() {
               error={trendingError}
               onRetry={refetchTrending}
             />
+            <MovieRow
+              title="Mejor puntuados"
+              movies={topRated?.data}
+              loading={topRatedLoading}
+              error={topRatedError}
+              onRetry={refetchTopRated}
+            />
+            <MovieRow
+              title="Temporada actual"
+              movies={seasonal?.data}
+              loading={seasonalLoading}
+              error={seasonalError}
+              onRetry={refetchSeasonal}
+            />
+            <MovieRow
+              title="Recomendados"
+              movies={recommended?.data}
+              loading={recommendedLoading}
+              error={recommendedError}
+              onRetry={refetchRecommended}
+            />
           </div>
         )}
 
@@ -203,12 +270,12 @@ function Search() {
       </div>
 
       <Modal open={filtersOpen} onClose={() => setFiltersOpen(false)} title="Filtros">
-        <Filters value={filters} onChange={handleFiltersChange} />
+        <Filters value={filters} onChange={handleFiltersChange} collapsibleGenres />
         <div className="mt-6 flex justify-end">
           <button
             type="button"
             onClick={() => setFiltersOpen(false)}
-            className="flex min-h-11 items-center gap-2 rounded-full bg-primary px-5 text-sm font-semibold text-white transition-colors hover:bg-primary-hover"
+            className="flex min-h-11 items-center gap-2 rounded-full bg-primary px-5 text-sm font-semibold text-on-primary transition-colors hover:bg-primary-hover"
           >
             <X size={16} aria-hidden />
             Cerrar

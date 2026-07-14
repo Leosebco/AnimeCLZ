@@ -29,6 +29,7 @@ const Register = lazy(() => import('@/pages/Register'))
 const ForgotPassword = lazy(() => import('@/pages/ForgotPassword'))
 const ResetPassword = lazy(() => import('@/pages/ResetPassword'))
 const Placeholder = lazy(() => import('@/pages/Placeholder'))
+const Watch = lazy(() => import('@/pages/Watch'))
 
 const AdminDashboard = lazy(() => import('@/pages/admin/Dashboard'))
 const AdminAnimes = lazy(() => import('@/pages/admin/Animes'))
@@ -64,6 +65,12 @@ function RouteFallback() {
  * `roles={STAFF_ROLES}` evaluado sobre el ROL DEL PERFIL ACTIVO (no el de
  * la cuenta) — solo admin/editor/moderador pasan; un usuario autenticado
  * sin ese rol es redirigido a Inicio, no a Login.
+ *
+ * `/anime/:id/ver/:episodeNumber` (v2.1, reproductor) queda FUERA de
+ * `Layout` a propósito (sin Navbar/Footer, pantalla completa) pero SÍ
+ * requiere sesión+perfil — mismo patrón que `PROFILE_SELECT` arriba (un
+ * `<Route element={<ProtectedRoute />}>` como hermano directo de `Layout`,
+ * no anidado dentro), sin necesitar tocar `ProtectedRoute.jsx`/`Layout.jsx`.
  */
 function AppRouter() {
   return (
@@ -78,6 +85,10 @@ function AppRouter() {
 
         <Route element={<ProtectedRoute requireProfile={false} />}>
           <Route path={ROUTES.PROFILE_SELECT} element={<ProfileSelect />} />
+        </Route>
+
+        <Route element={<ProtectedRoute />}>
+          <Route path={ROUTES.WATCH} element={<Watch />} />
         </Route>
 
         <Route element={<Layout />}>

@@ -40,3 +40,27 @@ export async function withFallback(
     return emptyValue
   }
 }
+
+/**
+ * Generalización de `withFallback` a N funciones en orden (en vez de
+ * exactamente primaria/respaldo) — usada por `ProviderManager.js` (v1.9)
+ * para cascadas de "primero el proveedor A, si no da nada el B, si no el
+ * C..." sin fijar de antemano cuántos proveedores hay. Mismo contrato:
+ * nunca lanza salvo abort real, cualquier otra falla de TODAS las
+ * funciones resuelve a `emptyValue`.
+ */
+export async function firstSuccessful(
+  fns,
+  { isEmpty = (result) => !result || result.length === 0, onError, emptyValue = [] } = {},
+) {
+  for (const fn of fns) {
+    try {
+      const result = await fn()
+      if (!isEmpty(result)) return result
+    } catch (err) {
+      if (isAbortError(err)) throw err
+      onError?.(err)
+    }
+  }
+  return emptyValue
+}

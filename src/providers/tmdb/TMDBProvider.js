@@ -1,56 +1,22 @@
 import { createStubProvider } from '../stubProvider'
 
-// TMDB es de películas/series en general, no específico de anime — su
-// implementación real probablemente necesite mapear campos distintos
-// (no todos los ~20 métodos tendrán un equivalente 1:1). El contrato se
-// deja idéntico al de JikanProvider por consistencia con AnimeProvider;
-// se ajusta cuando se implemente de verdad.
+// Todavía sin implementar (TMDB es de películas/series en general, no
+// específico de anime — su implementación real probablemente necesite
+// mapear campos distintos). Contrato de 7 métodos actualizado en v1.9/v2.0
+// (Provider Engine) para que Jikan/AniList/TMDB declaren la misma
+// interfaz que espera `ProviderManager.js` — antes tenía los 21 métodos
+// heredados del viejo `AnimeProvider.js`/`JikanProvider.js`.
 const METHODS = [
-  'getTrending',
-  'getTopRated',
-  'getCurrentSeason',
-  'getMovies',
-  'getMostPopular',
-  'getBestRated',
+  'search',
+  'getAnime',
+  'getEpisodes',
+  'getCharacters',
+  'getRelations',
   'getRecommendations',
-  'getAnimeByGenre',
-  'discoverAnime',
-  'searchAnime',
-  'quickSearchAnime',
-  'getAnimeById',
-  'getAnimeCharacters',
-  'getAnimeEpisodes',
-  'getAnimeRecommendations',
-  'getAnimeRelations',
-  'getAnimePictures',
-  'getFeaturedAnime',
-  'getFeaturedSlides',
-  'searchCharacters',
-  'getCharacterAnime',
+  'getGallery',
 ]
 
 const TMDBProvider = createStubProvider('TMDBProvider', METHODS)
 
-export const {
-  getTrending,
-  getTopRated,
-  getCurrentSeason,
-  getMovies,
-  getMostPopular,
-  getBestRated,
-  getRecommendations,
-  getAnimeByGenre,
-  discoverAnime,
-  searchAnime,
-  quickSearchAnime,
-  getAnimeById,
-  getAnimeCharacters,
-  getAnimeEpisodes,
-  getAnimeRecommendations,
-  getAnimeRelations,
-  getAnimePictures,
-  getFeaturedAnime,
-  getFeaturedSlides,
-  searchCharacters,
-  getCharacterAnime,
-} = TMDBProvider
+export const { search, getAnime, getEpisodes, getCharacters, getRelations, getRecommendations, getGallery } =
+  TMDBProvider

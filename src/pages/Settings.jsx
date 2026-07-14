@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { Check, Globe, Bell, Lock, Loader2 } from 'lucide-react'
+import { Check, Globe, Bell, Lock, Loader2, PlayCircle } from 'lucide-react'
 import Container from '@/components/ui/Container'
 import { useTheme } from '@/hooks/useTheme'
+import { useProfile } from '@/hooks/useProfile'
 import { cn } from '@/utils/cn'
 
 const GROUPS = [
@@ -23,16 +24,22 @@ const GROUPS = [
 ]
 
 /**
- * Tema: único control realmente interactivo de esta página (v1.0) — el
- * resto sigue como estructura preparada sin lógica (mismo criterio que
- * pages/admin/Settings.jsx: un toggle que no persiste nada sería peor que
- * no tenerlo). El tema SÍ persiste de verdad (profiles_account.tema, ver
- * ThemeContext) y se aplica al instante, sin recargar la página.
+ * Tema (v1.0) y Reproducción/autoplay (v2.1) son los controles realmente
+ * interactivos de esta página — el resto (Idioma/Notificaciones/
+ * Privacidad) sigue como estructura preparada sin lógica (mismo criterio
+ * que pages/admin/Settings.jsx: un toggle que no persiste nada sería peor
+ * que no tenerlo). Ambos persisten de verdad en `profiles_account`
+ * (`tema`/`autoplay`) — el tema se aplica al instante vía `ThemeContext`;
+ * autoplay solo lo lee el reproductor al terminar un episodio, así que
+ * escribe directo con `useProfile().updateProfile()`, sin contexto propio.
  */
 function Settings() {
   const { themeId, themes, setTheme } = useTheme()
+  const { activeProfile, updateProfile } = useProfile()
   const [savingId, setSavingId] = useState(null)
   const [error, setError] = useState(null)
+  const [savingAutoplay, setSavingAutoplay] = useState(false)
+  const [autoplayError, setAutoplayError] = useState(null)
 
   const handleSelectTheme = async (id) => {
     if (id === themeId) return
@@ -44,6 +51,24 @@ function Settings() {
       setError('No pudimos guardar tu tema. Inténtalo nuevamente.')
     } finally {
       setSavingId(null)
+    }
+  }
+
+  // v2.1 — mismo patrón que Tema: escribe directo con
+  // useProfile().updateProfile, sin un contexto dedicado (a diferencia del
+  // tema, esta preferencia solo la lee el reproductor al terminar un
+  // episodio, no hace falta aplicarla en vivo en ningún otro lado).
+  const autoplayEnabled = activeProfile?.autoplay !== false
+  const handleToggleAutoplay = async () => {
+    if (!activeProfile) return
+    setAutoplayError(null)
+    setSavingAutoplay(true)
+    try {
+      await updateProfile(activeProfile.id, { autoplay: !autoplayEnabled })
+    } catch {
+      setAutoplayError('No pudimos guardar esta preferencia. Inténtalo nuevamente.')
+    } finally {
+      setSavingAutoplay(false)
     }
   }
 
@@ -92,6 +117,49 @@ function Settings() {
         {error && (
           <p role="alert" className="mt-3 text-sm text-error">
             {error}
+          </p>
+        )}
+      </section>
+
+      <section className="mt-4 rounded-2xl border border-border bg-card p-5">
+        <div className="flex items-center gap-3">
+          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-hover text-primary">
+            <PlayCircle size={18} aria-hidden />
+          </span>
+          <h2 className="font-display text-base font-semibold text-text">Reproducción</h2>
+        </div>
+
+        <div className="mt-4 flex items-center justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-sm text-text">Reproducir siguiente episodio automáticamente</p>
+            <p className="mt-0.5 text-xs text-text-secondary">
+              Al terminar un episodio, muestra una cuenta regresiva y pasa al siguiente.
+            </p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={autoplayEnabled}
+            aria-label="Reproducir siguiente episodio automáticamente"
+            disabled={savingAutoplay || !activeProfile}
+            onClick={handleToggleAutoplay}
+            className={cn(
+              'relative flex h-7 w-12 shrink-0 items-center rounded-full transition-colors disabled:opacity-60',
+              autoplayEnabled ? 'bg-primary' : 'bg-hover',
+            )}
+          >
+            <span
+              className={cn(
+                'h-5 w-5 rounded-full bg-white shadow transition-transform',
+                autoplayEnabled ? 'translate-x-6' : 'translate-x-1',
+              )}
+            />
+          </button>
+        </div>
+
+        {autoplayError && (
+          <p role="alert" className="mt-3 text-sm text-error">
+            {autoplayError}
           </p>
         )}
       </section>

@@ -96,27 +96,50 @@ familias, no hay mono) viven ahí; se reutilizan en vez de hardcodear valores.
 
 ## API
 
-**Arquitectura de proveedores (v1.3):** ninguna página/componente debe importar un proveedor concreto
-(Jikan, AniList, TMDB) ni `services/animeService.js` directamente — siempre importan desde
-`providers/AnimeProvider.js`, el único punto de entrada de datos de anime para toda la app.
-- `providers/jikan/JikanProvider.js` es la implementación activa hoy — re-exporta `services/
-  animeService.js` (la lógica real no se movió, para no arriesgar reescribir código ya probado).
-- `providers/anilist/AniListProvider.js` y `providers/tmdb/TMDBProvider.js` son **stubs sin
-  implementar** (arquitectura preparada) — cada método lanza un error claro si se llega a invocar (ver
-  `providers/stubProvider.js`). No lo son "por error"; no completar su implementación sin que se pida.
-  **No confundir con `api/anilist.js` (v1.6)**: ese es un cliente GraphQL real y en uso — desde v1.7 ya
-  no solo por el buscador de avatares (`services/avatarSearchService.js`), también por
-  `services/searchService.js`/`characterSearchService.js` (buscador global, ver más abajo) — pero sigue
-  sin ser una implementación de `AniListProvider.js` ni del catálogo de anime general (Home/Explorar/
-  Temporada/Top/Detalle); `AniListProvider.js` sigue siendo un stub sin tocar. `searchService.js`/
-  `characterSearchService.js`/`avatarSearchService.js` importan `animeService.js`/`api/jikan.js`/
-  `api/anilist.js` directamente, sin pasar por `AnimeProvider.js` — excepción deliberada: son
-  orquestadores de búsqueda cruzada entre fuentes, no navegación de catálogo, y no encajan en el modelo
-  "un solo proveedor activo" que `AnimeProvider.js` existe para resolver.
-- Cambiar el proveedor activo en el futuro es cambiar el único `export * from './jikan/JikanProvider'`
-  de `AnimeProvider.js` — ningún otro archivo debería necesitar tocarse.
+**Arquitectura de proveedores (v1.3) — fachada de catálogo, sigue siendo la que usan la mayoría de las
+páginas hoy:** ninguna página/componente debe importar `services/animeService.js` directamente — siempre
+importan desde `providers/AnimeProvider.js`, el punto de entrada de datos de anime para las páginas de
+catálogo todavía no migradas al Provider Engine (Home, Explore, Search, Top, Season, Landing,
+admin/Animes, admin/Seasons — 8 páginas). **`AnimeDetail.jsx` ya NO está en esta lista desde v2.0** — fue
+la primera página migrada al `ProviderManager.js` nuevo, ver más abajo.
+- `providers/AnimeProvider.js` es, desde v1.9, `export * from '@/services/animeService'` directo — 100%
+  Jikan, sin cambios de comportamiento. (Hasta v1.9 pasaba por `providers/jikan/JikanProvider.js`, un
+  `export *` intermedio sin transformar nada; ese archivo ahora es otra cosa, ver más abajo — el import se
+  saltó ese salto para no arrastrar el cambio de contrato de `JikanProvider.js` hacia esta fachada.)
+- **No confundir con `api/anilist.js` (v1.6)**: cliente GraphQL real, usado por `services/searchService.js`/
+  `characterSearchService.js`/`avatarSearchService.js` (buscador global y de avatares, ver más abajo) Y
+  por `providers/anilist/AniListProvider.js` (Provider Engine, v1.9, ver esa sección) — dos consumidores
+  distintos del mismo cliente, con queries propias cada uno (deliberado, no duplicado por descuido — ver
+  v1.9). `searchService.js`/`characterSearchService.js`/`avatarSearchService.js` importan
+  `animeService.js`/`api/jikan.js`/`api/anilist.js` directamente, sin pasar por `AnimeProvider.js` —
+  excepción deliberada: son orquestadores de búsqueda cruzada entre fuentes, no navegación de catálogo.
 - Cualquier función nueva de catálogo se agrega en `animeService.js` (mismo lugar de siempre) y queda
-  re-exportada automáticamente a través de `JikanProvider.js` → `AnimeProvider.js`.
+  re-exportada automáticamente a través de `AnimeProvider.js`.
+
+**Provider Engine (v1.9, conectado por primera vez en v2.0) — motor nuevo, multi-proveedor:**
+`providers/ProviderManager.js` es un segundo punto de entrada, con una interfaz más chica y distinta
+(`search/getAnime/getEpisodes/getCharacters/getRelations/getRecommendations/getGallery` — 7 métodos, no
+los ~21 de `AnimeProvider.js`), que consulta **varios** proveedores (AniList primero, Jikan de respaldo/
+complemento) en vez de uno solo. **`AnimeDetail.jsx` es la primera página conectada** (sus 6 secciones
+dependientes de un id de anime) — el resto de páginas de catálogo (Home/Explore/Search/Top/Season/
+Landing/admin) siguen en `AnimeProvider.js`, ver esa sección arriba y la entrada v2.0 en Notas técnicas
+para por qué se migró en pasos. `providers/jikan/JikanProvider.js` y `providers/anilist/AniListProvider.js`
+dejaron de ser lo que describía v1.3 arriba (el primero era el re-export activo de `AnimeProvider.js`; el
+segundo un stub) — ahora son los adaptadores de 7 métodos que usa `ProviderManager.js`. `AniListProvider.js`
+**ya no es un stub**: tiene una implementación real (5 de 7 métodos; `getEpisodes`/`getGallery` son
+no-ops deliberados, AniList no tiene listado de episodios ni galería de imágenes en su schema público)
+sobre `api/anilist.js`. `providers/tmdb/TMDBProvider.js` sigue siendo un stub (`createStubProvider`),
+solo con el contrato actualizado a los mismos 7 métodos — no completar su implementación sin que se pida.
+
+**`getAnime()` — 4 campos nuevos en v2.7 (Media Hub), sin método nuevo ni llamada nueva:** `staff`,
+`officialLinks`, `streamingPlatforms` y `studioLinks` se agregaron a la MISMA query GraphQL que
+`AniListProvider.getAnime()` ya hacía (`staff`/`externalLinks`/`studios(isMain:true).siteUrl` sumados al
+`ANIME_QUERY` existente) — cero round-trips adicionales, ver la entrada v2.7 en Notas técnicas para el
+detalle completo. Los 4 son exclusivos de AniList hoy (Jikan tiene
+endpoints reales para staff/enlaces —`/anime/{id}/staff`, `/anime/{id}/external`— pero conectarlos
+implicaría 2 llamadas nuevas por página que AniList ya cubre gratis en el mismo `getAnime()`; `JikanProvider.js`
+no se tocó) — `mergeAnimeFields` ya trata una clave ausente en el lado de Jikan como vacía, así que el
+merge funciona sin declarar explícitamente `staff: []` etc. del lado Jikan.
 
 Usar únicamente **Jikan API** (`src/api/jikan.js`, baseURL `https://api.jikan.moe/v4`) como fuente de
 datos — hoy el único proveedor real detrás de `AnimeProvider`. Nunca inventar información de animes
@@ -131,10 +154,14 @@ Supabase (tabla `anime_synopsis_es`, migración 0012) en vez de la original de J
 tabla se puebla desde un futuro importador (no implementado todavía), así que hoy esto es, en la
 práctica, casi siempre un no-op. No agregar una llamada de traducción en vivo aquí.
 
-Jikan es una API pública sin key, con límite de tasa y caídas 5xx intermitentes bajo carga (observado
-empíricamente, y confirmado independientemente con `curl` fuera de la app: el endpoint `/anime?q=` de
-búsqueda es notablemente más frágil que el resto). Mitigaciones ya implementadas — no las quites:
-- `api/jikan.js` reintenta automáticamente (con backoff exponencial, 3 intentos) respuestas 429 y 5xx.
+Jikan es una API pública sin key, con límite de tasa y caídas 5xx/timeout intermitentes bajo carga
+(observado empíricamente, y confirmado independientemente con `curl` fuera de la app varias veces —
+incluyendo durante v2.0, ver esa entrada en Notas técnicas para el detalle: `/anime/20/episodes` tardó
+11s y devolvió 500 en pleno desarrollo de ese sprint). Mitigaciones ya implementadas — no las quites:
+- `api/jikan.js` reintenta automáticamente (con backoff exponencial capado a 3s, 4 intentos) respuestas
+  429, 5xx, **y timeouts de cliente** (`error.code === 'ECONNABORTED'`, agregado en v2.0 — antes un
+  backend lento-y-después-caído se rendía al primer intento sin reintentar, porque un timeout no tiene
+  `error.response.status` y el chequeo viejo solo miraba eso).
 - `useFetch` cachea resultados por `cacheKey` (TTL configurable) y soporta `initialDelay` (ya no usado
   activamente desde que la cola de `api/jikan.js` centraliza el espaciado, pero se deja disponible).
 - `animeService.js` deduplica por `id` cualquier lista antes de devolverla (Jikan repite `mal_id` bajo
@@ -146,10 +173,17 @@ búsqueda es notablemente más frágil que el resto). Mitigaciones ya implementa
 - `ErrorState` siempre muestra un mensaje amable + botón "Reintentar", nunca una pantalla en blanco —
   esto aplica a cualquier fetch nuevo que se agregue (Home, catálogo, Detalle, Buscar). Los mensajes
   nunca mencionan "MyAnimeList" ni "Jikan" — son genéricos ("no pudimos cargar esta sección", etc.).
-- `api/jikan.js` (Sprint 3.6) encola **todas** las peticiones salientes por una cola de concurrencia
-  propia (máx. 2 en simultáneo, ≥180ms entre inicios) antes de llegar a axios. Por eso `Home.jsx` y
-  `AnimeDetail.jsx` ya **no** necesitan un `STAGGER_MS`/`initialDelay` manual por página — el
-  espaciado entre peticiones es responsabilidad centralizada de `api/jikan.js`, no de cada página.
+- `api/jikan.js` (Sprint 3.6, reescrito en v2.0) encola **todas** las peticiones salientes por una cola
+  de concurrencia propia (máx. 2 en simultáneo, ≥180ms entre inicios) antes de llegar a axios. Por eso
+  `Home.jsx` y `AnimeDetail.jsx` ya **no** necesitan un `STAGGER_MS`/`initialDelay` manual por página —
+  el espaciado entre peticiones es responsabilidad centralizada de `api/jikan.js`, no de cada página.
+  **Bug real corregido en v2.0** (causa raíz de gran parte de los "servidor ocupado" reportados, ver esa
+  entrada en Notas técnicas): la reserva de cupo tenía una condición de carrera (chequeaba el contador al
+  encolar pero lo incrementaba recién dentro de un `setTimeout` futuro, sin volver a chequear) — bajo una
+  ráfaga de peticiones simultáneas (exactamente lo que hacían/hacen `Home.jsx`/`AnimeDetail.jsx` al
+  montarse, 6 `useFetch` cada uno) el límite de 2 quedaba completamente anulado. Ahora la reserva es
+  síncrona (dentro del mismo `while` que despacha) — no reintroducir un `setTimeout` entre el chequeo del
+  cupo y su incremento.
 - Aun con estas mitigaciones, `/anime?q=` (búsqueda) puede fallar por completo durante minutos si el
   backend de búsqueda de MAL está degradado — esto es una limitación externa real, verificada varias
   veces con `curl` fuera de la app, no un bug de AnimeCLZ. No prometer 100% de disponibilidad de la
@@ -300,10 +334,13 @@ mi lista, historial) y el perfil del usuario.
   INSERT de las tres tablas además verifican que el `profile_id` enviado pertenezca de verdad a una
   cuenta con `exists(select 1 from profiles_account ...)` — sin eso, `auth.uid() = user_id` no alcanza
   para impedir que una cuenta escriba con el `profile_id` de un perfil ajeno.
-- `watch_history` (tabla, también por perfil desde v1.5) está preparada para "Continuar viendo" pero
-  **nada la escribe todavía** — no hay reproductor. `services/historyService.js` (`listHistory(profileId)`/
-  `upsertProgress(accountId, profileId, {...})`) y `/historial` ya existen para cuando lo haya (fase
-  "Streaming" del ROADMAP); no fabricar entradas falsas mientras tanto.
+- `watch_history` (tabla, también por perfil desde v1.5) tiene desde **v2.1** un escritor real:
+  `pages/Watch.jsx` (ver "Sistema de reproducción" más abajo) llama a `historyService.upsertProgress`
+  mientras reproduce. Antes de v2.1 la tabla estaba preparada pero vacía en la práctica — ya no.
+  `services/historyService.js` expone `listHistory(profileId)`/`getProgress(profileId, malId,
+  episodeNumber)`/`upsertProgress(accountId, profileId, {...})`. "Continuar viendo" se deriva en el
+  cliente de `listHistory` (agrupado por `mal_id`, la fila más reciente ya que viene `updated_at desc`)
+  — no hay tabla/vista nueva para eso.
 - `ratings`, `notifications` son tablas preparadas (con RLS) sin interfaz — no construir UI para ellas
   hasta que se pida explícitamente. `comments` ya tiene una acción real desde v1.0: eliminar (moderación,
   `pages/admin/Comments.jsx` → `adminService.deleteComment`) — sigue sin interfaz pública para crear/
@@ -318,6 +355,11 @@ mi lista, historial) y el perfil del usuario.
   `document.documentElement.dataset.theme`; el picker real vive en `pages/Settings.jsx`. Sunset Orange es
   una excepción puntual y deliberada a "no naranja de marca" — solo aplica si el usuario elige ese tema,
   nunca al branding por defecto (ver Diseño más arriba).
+- **Preferencia de autoplay (v2.1):** `profiles_account.autoplay` (migración 0024, `boolean not null
+  default true`) — mismo patrón de escritura que `tema`: `Settings.jsx` llama a
+  `useProfile().updateProfile(activeProfile.id, {autoplay})` directo, sin contexto dedicado (a diferencia
+  de Tema, esta preferencia no se aplica "en vivo" en ningún otro lado — solo la lee el reproductor al
+  terminar un episodio). Ver "Sistema de reproducción" más abajo.
 - Migraciones SQL organizadas en `supabase/migrations/000N_*.sql` (ver `supabase/migrations/README.md`
   para cómo aplicarlas) — **sí están aplicadas** contra el proyecto real de Supabase (`supabase db push`,
   verificadas en vivo con `supabase db query --linked` tras cada una). Todas las tablas tienen Row Level
@@ -340,6 +382,151 @@ mi lista, historial) y el perfil del usuario.
   `adminService.updateUserStatus`. Desactivar NO cierra la sesión ya abierta de esa cuenta por sí solo:
   es una marca que el resto del código puede empezar a respetar si en el futuro se agrega un chequeo de
   acceso basado en `activo` (no implementado todavía — ver ROADMAP.md).
+
+## Sistema de reproducción (v2.1)
+
+Primer sistema de reproducción real de AnimeCLZ. Arquitectura desacoplada (`PlaybackProviderManager`,
+misma filosofía que `ProviderManager` — ver "## API"), un reproductor de video completo hecho a mano, y
+"Continuar viendo"/autoplay reales — pero con un límite de alcance real y deliberado, no una omisión.
+
+**Decisión de piratería, ya resuelta con el usuario, no se reabre:** el pedido original de este sprint
+nombraba Consumet/AnimeKai/AnimePahe/HiAnime como proveedores de video. Los cuatro son agregadores que
+funcionan haciendo scraping de sitios de streaming no autorizado (gogoanime/zoro-aniwatch/animepahe...),
+no APIs con licencia — implementarlos de verdad habría significado construir la cañería para transmitir
+contenido con copyright sin autorización, y además habría contradicho la propia regla de "sin scraping"
+ya establecida para `ProviderManager` (v1.9). Se le planteó la disyuntiva al usuario, quien confirmó:
+construir el 100% de la arquitectura (idéntico contrato de interfaz al que necesitaría un proveedor real
+con licencia) con esos 4 + YouTube como **stubs inertes** (mismo patrón que ya usa `TMDBProvider` desde
+v1.9), y usar **AnimeThemes** (base de datos abierta y de licencia permisiva de openings/endings de
+anime, `api.animethemes.moe`) como el único proveedor real conectado.
+
+**Límite de alcance real, verificado en vivo con `curl` antes de escribir código, no descubierto a mitad
+de sprint:** AnimeThemes solo tiene clips de openings/endings (~90 segundos), nunca episodios completos —
+hoy no existe ninguna fuente legal y pública de episodios completos para conectar. Este sprint entrega la
+arquitectura completa y un reproductor funcionando de verdad con contenido real (los OP/ED de cada
+anime), no episodios completos — esa pieza queda con la interfaz, el modelo de datos y la UI ya listos
+para cuando exista un proveedor con licencia real.
+
+- **`src/providers/playback/PlaybackProviderManager.js`** — orquestador, mismo patrón que
+  `ProviderManager.js` (`withCache`/`getStaleCached` de `utils/cache.js` reusados sin cambios, prefijo de
+  caché `pbm:`). Dos métodos, ambos **fusionan** todos los proveedores activos (hoy, en la práctica,
+  solo uno):
+  - `getEpisodes(animeId, signal)` — el catálogo PROPIO de cada proveedor de reproducción (para
+    AnimeThemes: todas las entradas OP/ED con su rango de episodios). **No reemplaza**
+    `ProviderManager.getEpisodes()` (metadatos de Jikan/AniList: número/título/fecha) — responde una
+    pregunta distinta ("¿qué hay para reproducir?" vs. "¿qué episodios existen?"). `AnimeDetail.jsx`
+    consume ambos, uno al lado del otro. Caché 6h (cambia poco).
+  - `getSources(animeId, episodeNumber, signal)` → `{sources: VideoSource[], subtitleLanguages: [],
+    audioLanguages: [], info}` — filtra en memoria el catálogo ya cacheado (vía `rangeUtils`), sin una
+    segunda llamada de red por episodio.
+  - `PLAYBACK_PROVIDERS = [{id:'animethemes', ...AnimeThemesProvider}]` — los 5 stubs (`consumet`/
+    `animekai`/`animepahe`/`hianime`/`youtube`, cada uno en su propia carpeta bajo `providers/playback/`,
+    mismo `createStubProvider` de siempre) quedan definidos/exportados pero deliberadamente **fuera** del
+    array activo — mismo criterio ya usado para excluir TMDB del `ProviderManager` real. `youtube` es
+    trailers **preparado como estructura únicamente** — no reemplaza el trailer que ya funciona hoy en
+    `AnimeDetail.jsx` (ese sigue siendo YouTube embebido directo, sin tocar).
+- **`src/providers/playback/animethemes/AnimeThemesProvider.js`** — implementación real. `src/api/
+  animethemes.js` (mismo patrón que `api/anilist.js`: axios simple, `timeout: 10000`, 2 reintentos con
+  backoff, sin cola de concurrencia propia — AnimeThemes no mostró la fragilidad que sí tiene Jikan,
+  probado en vivo). Internamente cachea SU PROPIO catálogo completo por anime (`animethemes:catalog:
+  ${animeId}`, 6h TTL, independiente de la caché de `PlaybackProviderManager`) para que `getEpisodes()` y
+  `getSources()` de distintos episodios del mismo anime disparen una sola llamada de red real, sin
+  importar el orden en que se llamen.
+  - **Parseo de rangos** (`rangeUtils.js`, puro y testeado con fixtures): un tema (`"1-25"`, `"78-103"`,
+    `null`) declara qué episodios cubre. Verificado con datos reales de Naruto: OP4 tiene una versión con
+    `episodes: "78-103"` y una versión 2 (recorte sin créditos) con `episodes: null`. Regla: si al menos
+    una entrada de un tema tiene rango real, las entradas `null` de ese mismo tema quedan EXCLUIDAS del
+    match (son un recorte alternativo del rango ya declarado en otra versión, no "aplica a todos los
+    episodios" — afirmarlo sería un dato que AnimeThemes nunca declaró). Si TODAS las entradas de un tema
+    son `null` (películas/OVAs sin backfill de rango), se aceptan como "cubre toda la serie" — solo por
+    ausencia de mejor información, nunca por default.
+  - **Mapeo a `VideoSource`** (`createVideoSource()`, nuevo en `providers/models.js` — el `@typedef
+    VideoSource` ya estaba documentado desde v1.9, pero le faltaba la fábrica): `calidad:
+    "${resolution}p"`; `servidor` identifica el clip en sí (`"OP4 · GO!!!"`, no hay múltiples hosts reales
+    que distinguir); `subtitleLanguages: []` siempre (AnimeThemes no tiene pistas de subtítulo por idioma
+    — `subbed`/`lyrics` son atributos fijos del archivo, no un idioma seleccionable); `audioLanguage:
+    'ja'` (dato real: son clips originales japoneses, nunca doblajes); `preview: null` (no hay miniatura
+    por clip — no se reutiliza el poster para no hacerlo pasar por una preview real).
+- **Migraciones 0023/0024** — `watch_history.duration_seconds` (integer, nullable, sin CHECK; lo escribe
+  el CLIENTE desde `<video>.duration`, ningún proveedor reporta una duración real por episodio) y
+  `profiles_account.autoplay` (boolean, default `true`, mismo patrón que `tema`/`fondo`). Ambas aplicadas
+  y verificadas contra el proyecto real (`supabase db push` + `supabase db query --linked`, columna/tipo/
+  default confirmados).
+  - **Limitación aceptada, documentada, no resuelta este sprint:** la clave única de `watch_history` sigue
+    siendo `(profile_id, mal_id, episode_number)` — no distingue OP vs. ED del mismo episodio. Si un
+    perfil mira el OP y luego el ED del mismo número de episodio, la segunda escritura pisa el progreso de
+    la primera. En la práctica un episodio normalmente tiene un solo clip que el usuario mira de verdad,
+    así que se acepta como simplificación en vez de ampliar la clave única ahora.
+- **El reproductor — `<video>` nativo, controles hechos a mano, no una librería de player.** El motivo
+  real para una librería (video.js/plyr) es manejar streaming adaptativo (HLS/DASH) — no aplica acá: cada
+  fuente de AnimeThemes es un `.webm` estático de una sola resolución, sin manifiesto que manejar. Lo que
+  queda (play/pause, seek, volumen, velocidad, fullscreen, PiP) es API nativa del navegador — coherente
+  con el resto de la app (nunca una librería de UI empaquetada) y evita pelear contra el chrome por
+  defecto de una librería para que respete los 7 temas de color.
+  - `src/pages/Watch.jsx` (ruta `ROUTES.WATCH` = `/anime/:id/ver/:episodeNumber`, helper `watchPath()`) —
+    fuera de `Layout` (sin Navbar/Footer, pantalla completa), protegida por sesión+perfil como
+    `/mi-lista`/`/favoritos` — nuevo bloque `<Route element={<ProtectedRoute />}>` hermano directo de
+    `Layout` en `AppRouter.jsx`, mismo patrón ya usado por `PROFILE_SELECT`, sin tocar `ProtectedRoute.jsx`/
+    `Layout.jsx`. Combina metadatos de `ProviderManager` (ficha + episodio real) con las fuentes de
+    `PlaybackProviderManager`; si `sources` viene vacío, un `EmptyState` honesto explica que hoy solo hay
+    openings/endings, no episodios completos, con link de vuelta a la ficha.
+  - `src/components/player/` — `VideoPlayer.jsx` (dueño del `<video>`, overlays, `data-player-root`,
+    `[touch-action:none]` acotado a la superficie del reproductor, oculta controles tras 3s de reproducción
+    continua), `PlayerControls.jsx` (barra superior con volver+bloqueo, centro con anterior/play-pausa/
+    siguiente, barra inferior con progreso+buffer real/volumen/velocidad/subtítulos condicional/selector de
+    fuente/PiP/fullscreen — `.safe-top`/`.safe-bottom` en la barra, no en todo el reproductor, para no
+    duplicar padding), `SourceSelector.jsx` (Listbox de Headless UI, mismo patrón que `Select.jsx`),
+    `NextEpisodeOverlay.jsx` (cuenta regresiva 5→0), `EpisodeInfoPanel.jsx` (reusa `InfoGrid` existente),
+    `usePlayerState.js`/`useKeyboardShortcuts.js`/`useWatchProgress.js` (hooks de estado/teclado/progreso).
+  - **Botón de subtítulos condicional**: solo se renderiza si `subtitleLanguages?.length > 0` — con
+    AnimeThemes (que nunca reporta idiomas) simplemente no aparece, sin lógica especial por proveedor.
+  - **Loader de buffering — única excepción documentada a "nunca un spinner, siempre un skeleton"**
+    (principio de `LoadingState.jsx`): la carga de página (ficha+fuentes antes de montar el reproductor)
+    sigue usando el skeleton de siempre; el buffering EN VIVO de un video ya visible (`waiting`/`playing`
+    nativos de `<video>`) usa un pequeño spinner (`animate-spin`) directo en `VideoPlayer.jsx` — un
+    skeleton no tiene sentido superpuesto a contenido de video que ya está en pantalla.
+  - **Progreso**: `upsertProgress` cada ~15s mientras reproduce + inmediato en `pause` + inmediato en
+    `visibilitychange`→`hidden` (funciona al pasar a background en mobile). `sendBeacon`/`beforeunload`
+    descartados a propósito: `sendBeacon` no puede llevar el header `Authorization` que exige Supabase, así
+    que no puede autenticar la escritura; `beforeunload` no es confiable en iOS Safari.
+  - **Resume**: `getProgress()` antes de reproducir; en `loadedmetadata`, si `0 < guardado < duración -
+    10s`, hace seek a esa posición (últimos ~10s se tratan como "ya terminado").
+  - **Autoplay siguiente episodio**: evento `ended` → `NextEpisodeOverlay` (cuenta regresiva) → navega a
+    `watchPath(id, episodeNumber+1)` salvo cancelación, gateado en `activeProfile?.autoplay !== false`. El
+    total de episodios sale de `ProviderManager.getAnime(id).episodes` (Jikan/AniList) — nunca de la
+    cobertura de AnimeThemes, que solo sabe qué rangos tienen tema, no el total real de la serie.
+  - **Atajos de teclado** (`useKeyboardShortcuts.js`): Espacio (play/pausa), ←/→ (±10s), ↑/↓ (±volumen), F
+    (fullscreen), M (mute), Escape (volver — solo si NO está en fullscreen; si lo está, el navegador ya
+    maneja salir de fullscreen de forma nativa). Ignora teclas si el foco está en un input/textarea. Activo
+    solo mientras `Watch` está montada.
+  - **Mobile**: bloqueo de controles (ícono dedicado, estado booleano); `[touch-action:none]` acotado a la
+    superficie del video (mismo criterio de scoping que ya usa `MovieRow.jsx`, nunca global); `.safe-top`/
+    `.safe-bottom` en la barra de controles.
+- **`AnimeDetail.jsx` — episodios clickeables**: la sección Episodios pasa de una lista estática (sin
+  `Link`, sin hover) a una grilla (`grid-cols-2 sm:grid-cols-3 lg:grid-cols-4`) de `EpisodeCard.jsx`
+  (nuevo, `components/anime/`) — cada una es un `Link` a `watchPath(anime.id, episode.number)`. Miniatura:
+  cae al poster/backdrop del anime con un ícono de play superpuesto (ningún proveedor da miniatura real
+  por episodio — el ícono deja claro que es portada genérica, no una miniatura inventada). Duración
+  mostrada: `anime.duration` (duración típica de la serie, dato real de Jikan) — nunca presentada como si
+  describiera el clip específico de AnimeThemes. Badges: `Filler` (ya real, de Jikan), `Visto`/barra de
+  progreso (derivados de `watch_history` filtrado a ese `mal_id`, solo si hay sesión), "Sin fuente
+  disponible" si `PlaybackProviderManager`+`rangeUtils` no encuentran cobertura para ese episodio.
+- **Verificado en vivo** (no solo build/lint): script Vite-SSR contra la API real de AnimeThemes —
+  `parseEpisodesLabel`/`resolveEligibleEntries`/`resolveEpisodeCoverage` con fixtures a mano (10
+  aserciones); `AnimeThemesProvider.getEpisodes/getSources` contra Naruto (mal_id 20) real: catálogo con
+  25 temas, URLs `.webm` reales y reproducibles, fuentes resueltas para el episodio 10 con `audioLanguages:
+  ['ja']`; un `mal_id` inexistente resuelve `sources: []` sin lanzar; los 5 stubs lanzan el error esperado
+  de `createStubProvider`; `PlaybackProviderManager.getEpisodes/getSources` fusiona y etiqueta
+  `provider: 'animethemes'` correctamente (24/24 aserciones pasaron). Migraciones 0023/0024 aplicadas y
+  columna/tipo/default verificados con `supabase db query --linked`. El round-trip autenticado real de
+  `upsertProgress`/`getProgress` (que requiere una sesión de usuario real con JWT, no disponible en un
+  script fuera del navegador) queda para la verificación manual en navegador de abajo — las políticas RLS
+  de `watch_history` no cambiaron en 0023/0024 (solo se agregó una columna nullable/con default), así que
+  su comportamiento ya estaba probado desde v1.5/v2.1.
+- **No implementado, fuera de alcance a propósito**: episodios completos (no existe fuente legal pública
+  hoy — ver arriba); los 5 proveedores stub como scrapers funcionales (decisión de piratería, no se
+  reconsidera); un segundo `orderBy`/clave única que distinga OP vs. ED en `watch_history`; traducir el
+  vocabulario de subtítulos ya que AnimeThemes no tiene ninguno que traducir.
 
 ## Flujo de trabajo de código
 
@@ -377,7 +564,9 @@ mi lista, historial) y el perfil del usuario.
   de perfiles, protegida solo por sesión — ver `requireProfile={false}`); `/iniciar-sesion`,
   `/crear-cuenta`, `/recuperar-contrasena`, `/restablecer-contrasena` (fuera del `Layout`, sin
   Navbar/Footer); `/admin` y `/admin/{animes,temporadas,episodios,personajes,estudios,noticias,usuarios,
-  comentarios,configuracion}` (protegidas por el rol del perfil activo, ver sección Autenticación).
+  comentarios,configuracion}` (protegidas por el rol del perfil activo, ver sección Autenticación);
+  `/anime/:id/ver/:episodeNumber` (v2.1, reproductor — ver "Sistema de reproducción" arriba), protegida
+  por sesión+perfil, fuera del `Layout` (sin Navbar/Footer, pantalla completa).
   `src/data/movies.js` fue eliminado — no reintroducir datos mock.
 - `AnimeDetail.jsx` es la ficha completa (Sprint 3): banner, info extendida (ranking, popularidad,
   estudios, productores, licenciantes, clasificación, temas, demografía), Personajes principales,
@@ -718,6 +907,560 @@ mi lista, historial) y el perfil del usuario.
     `Array.from`) vivía inline dentro de `Filters.jsx`; ahora es una función compartida que también usa
     `AdvancedFiltersPanel.jsx`, para no duplicarlo. `Filters.jsx` no cambió de comportamiento, solo de
     dónde importa ese cálculo.
+- **v1.9 — Provider Engine: arquitectura multi-proveedor de datos (sin reproductor todavía, sin conectar
+  a ninguna página).** Pedido por el usuario como "v1.7" (colisiona con el número ya usado arriba para el
+  sprint de búsqueda global/Home móvil) — documentado con el número real de secuencia. Investigación
+  previa (no supuestos) encontró que la arquitectura de proveedores ya existía **dos veces, con dos
+  propósitos distintos**: la fachada pasiva `AnimeProvider.js`→`JikanProvider.js`→`animeService.js` de
+  v1.3 (un solo proveedor activo, la que usan las 9 páginas de catálogo) y el cascade real AniList→Jikan
+  de v1.7 (`searchService.js`/`characterSearchService.js`/`apiCascade.js`/`api/anilist.js`), acotado a
+  búsqueda de texto. **Decisión confirmada con el usuario vía pregunta aclaratoria**: este sprint construye
+  el motor nuevo como arquitectura aislada y aditiva — completo y verificado por sí solo, pero **sin
+  reconectar las 9 páginas existentes** (siguen 100% Jikan, sin cambios). Reconectarlas es un sprint
+  futuro.
+  - **`providers/ProviderManager.js` (nuevo)** — el orquestador. Expone 6 métodos:
+    `search/getAnime/getEpisodes/getCharacters/getRelations/getRecommendations`. `PROVIDERS = [{id:
+    'anilist', ...AniListProvider}, {id:'jikan', ...JikanProvider}]` es el único punto de extensión —
+    agregar un proveedor real nuevo es una línea en este array, nada más se toca. TMDB queda fuera del
+    array mientras siga siendo un stub.
+  - **Semántica de cascada/merge, distinta por método (pedido explícito, no un único patrón para todos)**:
+    `search()` y `getCharacters()` **fusionan** todos los proveedores en paralelo y deduplican (no se
+    detienen en el primero que responde) — `search()` dedupea por `id` (`idMal`==`mal_id`, mismo espacio
+    numérico hoy); `getCharacters()` dedupea por nombre normalizado a un conjunto de palabras ordenadas
+    (minúsculas, sin puntuación) para que "Uzumaki, Naruto" (Jikan) y "Naruto Uzumaki" (AniList) generen la
+    misma clave sin un heurístico frágil de "voltear la coma". `getAnime()` fusiona campo por campo
+    (`mergeAnimeFields`, `providers/models.js`): conserva el valor de AniList si no está vacío, si no cae a
+    Jikan — nunca al revés ("nunca reemplazar datos buenos por peores"). `getEpisodes()`/`getRelations()`/
+    `getRecommendations()` son primero-no-vacío-gana (`firstSuccessful`, ver abajo) — AniList primero,
+    Jikan de respaldo.
+  - **`utils/apiCascade.js` — nuevo export `firstSuccessful(fns, opts)`**, sin tocar `withFallback`/
+    `isAbortError` existentes (`searchService.js`/`characterSearchService.js` siguen dependiendo de su
+    forma exacta) — generalización a N funciones en orden del mismo algoritmo, para cascadas con más de
+    dos proveedores sin fijar de antemano cuántos hay.
+  - **`providers/jikan/JikanProvider.js` (reescrito)** — pasa de `export * from 'animeService'` (21
+    métodos, el que usaba `AnimeProvider.js`) a ser el adaptador de 6 métodos sobre `animeService.js` (sin
+    tocar ese archivo), taggeando cada resultado `source: 'jikan'`.
+  - **`providers/anilist/AniListProvider.js` (de stub a implementación real)** — sobre `anilistRequest`
+    (`api/anilist.js`, sin tocarlo), con queries GraphQL propias (schema público de AniList, sin scraping).
+    **`getEpisodes()` es un no-op permanente y deliberado**: el schema público de AniList no tiene listado
+    de episodios (solo un conteo agregado) — no se "arregla" esto inventando datos, se devuelve vacío para
+    que el cascade pase a Jikan. **`getAnime()` deja `rank`/`popularity`/`producers`/`licensors`/`themes`/
+    `demographics` siempre en `null`/`[]`**: AniList no tiene un equivalente real de esos campos de MAL
+    (su `popularity`/`favourites` miden algo distinto a "rank") — mapear uno bajo el nombre del otro sería
+    un bug real, no una mejora; el merge los completa siempre desde Jikan. Nota deliberada: las queries de
+    `search()`/`getCharacters()` se parecen a las que ya existen en `searchService.js`/
+    `characterSearchService.js` — superposición aceptada, no descuido (ver "## API" arriba) — la
+    alternativa (reusar esas queries desde acá) habría arriesgado esa función ya en producción sin
+    necesidad.
+  - **`providers/models.js` (nuevo)** — `createEpisode(partial)`: normaliza cualquier episodio al shape
+    preparado para el futuro reproductor (`id, number, title, description, thumbnail, duration, sources:
+    [], subtitleLanguages: [], audioLanguages: [], provider`) — `sources`/`subtitleLanguages`/
+    `audioLanguages` quedan vacíos hoy (ningún proveedor de video existe todavía, no se inventa nada).
+    JSDoc `@typedef VideoSource` documenta el shape futuro (servidor/calidad/subtítulos/audio/preview) sin
+    fábrica ni código que lo instancie — nada lo necesita todavía, solo se deja la arquitectura lista, tal
+    como se pidió. `mergeAnimeFields(primary, secondary)` es el único algoritmo de "completar sin
+    reemplazar bueno por peor", reusado por `getAnime()` y por la deduplicación de `search()`.
+  - **`providers/tmdb/TMDBProvider.js`** — solo se achica su `METHODS` (mismo `createStubProvider` de
+    siempre) a los 6 nombres nuevos; sigue siendo un stub sin implementar.
+  - **`providers/AnimeProvider.js` — cambio de una línea, sin riesgo**: pasa a `export * from
+    '@/services/animeService'` directo (antes pasaba por `JikanProvider.js`, que ahora es otra cosa) —
+    mismos 21 nombres, mismo comportamiento byte-idéntico, verificado por grep que ninguna de las 9 páginas
+    depende de `JikanProvider.js` por nombre/ruta.
+  - **Caché**: `ProviderManager.js` envuelve cada método reusando `getCached`/`setCached` de
+    `utils/cache.js` (sin mecanismo nuevo), claves con prefijo propio `pm:<método>:<params>` (namespace
+    dentro del mismo `Map` compartido con `useFetch`, sin chocar). TTL configurable por método (`search` 5
+    min; `getAnime`/`getEpisodes`/`getRecommendations` 30 min; `getCharacters`/`getRelations` 60 min). Un
+    resultado vacío se cachea aparte, solo 60s — si ambas fuentes fallaron transitoriamente (Jikan, en
+    particular, ver sección API), un "sin datos" no debe quedar pegado media hora.
+  - **Nunca rompe la interfaz**: cualquier falla total (todas las fuentes fallan) resuelve a un valor vacío
+    seguro (`null`/`[]`/`{data:[],pagination}` según el método), nunca un throw — salvo un abort real, que
+    sí se relanza. **Verificado contra las APIs reales** (no solo build/lint): `getAnime(20)` (Naruto) trae
+    `source: 'anilist+jikan'` con campos completados de ambas fuentes; `search('frieren')` fusiona y
+    dedupea; `getCharacters(20)` combina AniList+Jikan sin duplicados; `getRelations(20)`/
+    `getRecommendations(20)` traen datos reales agrupados/ordenados; un id inválido resuelve `null` sin
+    lanzar (incluso con Jikan devolviendo 504 real durante la prueba — la degradación funcionó tal como se
+    diseñó); abortar a mitad de una llamada sí rechaza la promesa.
+- **v2.0 — Estabilización: causa raíz real de los errores de carga + AnimeDetail conectado al Provider
+  Engine.** Pedido explícito del usuario: antes de cualquier funcionalidad nueva, dejar AnimeCLZ estable
+  — encontrar la causa REAL de los "servidor ocupado" intermitentes (no reformular el mensaje) e integrar
+  `ProviderManager`. La investigación (lectura directa de código, no supuestos) encontró **dos causas
+  raíz reales y distintas**, no una sola:
+  - **Bug 1 — condición de carrera confirmada en `api/jikan.js`** (ver la entrada de ese archivo en la
+    sección API arriba para el detalle completo): la cola de concurrencia dejaba pasar ráfagas enteras sin
+    respetar `MAX_CONCURRENT=2`, porque reservaba el cupo dentro de un `setTimeout` futuro en vez de al
+    momento de chequear. Corregido con reserva síncrona (`while` que despacha y reserva en el mismo paso —
+    JS de un solo hilo cierra la condición de carrera de verdad). De paso: las requests abortadas mientras
+    esperan turno ahora se remueven de la cola en vez de seguir "gastando" un cupo, y el backoff de
+    reintento chequea abort antes/después de esperar en vez de reintentar a ciegas para un llamador que ya
+    se fue.
+  - **Bug 2 — hallazgo adicional en vivo durante la verificación de este mismo sprint**: `curl` directo
+    (fuera de la app) confirmó `/anime/20/episodes` tardando 11s y devolviendo 500 — más que el
+    `timeout: 10000` de axios, así que el cliente lo veía como `ECONNABORTED` (timeout), no como un
+    status 5xx. El chequeo de reintento (`RETRYABLE_STATUS`) solo miraba `error.response?.status`, que
+    para un timeout de cliente es `undefined` — un backend lento-y-después-caído se rendía al primer
+    intento sin reintentar nunca. Corregido: un timeout de cliente ahora cuenta como transitorio igual
+    que un 429/5xx (mismo presupuesto de 4 reintentos, mismo backoff).
+  - **Bug 3 — bug de código real y separado en `AnimeDetail.jsx`, sin relación con el uptime de Jikan**:
+    la sección Episodios leía `episodes.data?.length`/`episodes.data.map(...)`, pero `getAnimeEpisodes`
+    (y ahora `ProviderManager.getEpisodes`) devuelven `{data:[...], pagination}` — o sea `episodes.data`
+    (el campo `data` del propio `useFetch`) es ese objeto completo, no el array. `.length` sobre un
+    objeto es `undefined`, así que la condición era SIEMPRE verdadera: la sección mostraba "Sin episodios
+    listados" para TODOS los animes, sin importar si Jikan tenía datos. Prueba de que era un bug y no
+    diseño: la sección hermana "Recomendados" sí hacía el doble acceso correcto
+    (`recommendations.data?.data`) para la misma forma — a Episodios le faltaba ese segundo `.data`.
+    Corregido a `episodes.data?.data?.length`/`episodes.data.data.map(...)`.
+  - **Alcance de la migración — decisión confirmada con el usuario (pregunta aclaratoria)**: dado que
+    `ProviderManager` cubría (antes de este sprint) solo 5 de los ~21 métodos que usan las páginas —
+    falta toda la familia Trending/TopRated/MásPopular/MejorValorado/Temporada que necesitan Home/
+    Explorar/Buscar/Temporada, con paginación real y un choque de nombre en `getRecommendations` (global
+    de Home vs. por-anime) — este sprint se concentró en arreglar la causa raíz (beneficia a TODAS las
+    páginas, migradas o no) + migrar `AnimeDetail.jsx` completo (ya casi 1:1) + el nuevo método que le
+    faltaba. Home/Explorar/Buscar/Temporada quedan para un sprint propio, documentadas como paso
+    siguiente, no como pendiente por descuido.
+  - **`providers/models.js`/`ProviderManager.js` — caché "usar último resultado válido"** (pedido
+    explícito): `utils/cache.js.getCached` deja de borrar la entrada vencida al leerla (solo devuelve
+    `undefined`, preserva el valor); nuevo `getStaleCached(key)` la devuelve igual, aunque esté vencida.
+    `ProviderManager`'s `withCache`: si la consulta fresca vuelve vacía (ambos proveedores fallaron o
+    genuinamente no tienen datos) y existe una entrada vieja no vacía, se sirve esa (con un TTL corto para
+    reintentar de verdad pronto) — nunca un vacío mientras exista algo mejor en caché. Recién si tampoco
+    hay nada guardado se devuelve el vacío real, que en la UI termina en `EmptyState` (el último recurso
+    pedido explícitamente).
+  - **`getGallery` (nuevo, 7º método)** — no existía ningún método de galería en el Provider Engine.
+    `JikanProvider.getGallery` envuelve `getAnimePictures` (sin tocar `animeService.js`);
+    `AniListProvider.getGallery` es un no-op permanente (mismo criterio que `getEpisodes`: el schema
+    público de AniList solo tiene `coverImage`/`bannerImage` únicos, sin concepto de galería);
+    `ProviderManager.getGallery` cascada con `firstSuccessful`, TTL de 6h (imágenes promocionales casi no
+    cambian). `TMDBProvider` suma `'getGallery'` a su contrato de stub.
+  - **`AnimeDetail.jsx` migrado por completo**: sus 6 imports pasan de `@/providers/AnimeProvider` a
+    `@/providers/ProviderManager` (`getAnimeById→getAnime`, etc., `getAnimePictures→getGallery`) — la
+    página ya no importa `animeService.js`/`AnimeProvider.js` en absoluto. Variable `pictures` renombrada
+    a `gallery` (cosmético, ya se tocaba esa sección). Las `cacheKey` del `useFetch` externo no se
+    tocaron — siguen evitando el flash de skeleton en una revisita a la misma ficha.
+  - **Riesgo real documentado, no silenciado**: como los métodos de `ProviderManager` nunca lanzan salvo
+    abort real, la rama `.catch()` de `useFetch` queda efectivamente inalcanzable para estas 5 llamadas —
+    cualquier falla total ahora aparece como `EmptyState`, no `ErrorState`. Además, "Reintentar" solo
+    limpia la caché EXTERNA de `useFetch`, no la de `ProviderManager` (`pm:getEpisodes:...`) — reintentar
+    dentro de la ventana corta de 60s puede devolver el mismo vacío cacheado en vez de golpear la red de
+    nuevo. Ventana acotada y autocorregible, no un bloqueo indefinido — una solución genérica
+    (`skipCache` por método) queda para el sprint que construya la familia Trending/Top, que va a
+    necesitar resolver lo mismo.
+  - **Confirmado, sin cambios (documentado para no dar la impresión de pendiente por descuido)**:
+    Favoritos/Mi Lista/Historial (`collectionService.js`/`historyService.js`) ya guardan el anime completo
+    en la fila de Supabase al agregarlo y lo leen directo — nunca llaman a Jikan/AniList en vivo, no había
+    nada que migrar. `services/searchService.js` (motor de `/buscar` y el autocompletar del Navbar) es su
+    propia cascada AniList+Jikan ya afinada en dos sprints anteriores, con capacidades que
+    `ProviderManager.search()` no tiene (buscar personajes por nombre sin contexto de anime, agrupar
+    anime/personajes por separado, estado `degraded`) — reemplazarla habría sido una regresión real, no
+    una migración, así que `Search.jsx` no cambió.
+  - **Verificación real, no solo build/lint** (pedido explícito): (1) script aislado contra
+    `utils/cache.js` confirmando que un valor vencido sigue disponible vía `getStaleCached` pero no vía
+    `getCached`; (2) arnés con el adaptador de axios mockeado (determinístico, no la red real) contra
+    `api/jikan.js`: ráfaga de 10 peticiones nunca supera 2 en simultáneo Y respeta el espaciado de 180ms;
+    abortar peticiones todavía en cola rechaza casi al instante (no esperan su turno) y no llegan a la
+    red; abortar a mitad de un backoff de reintento no reintenta. Las 7 aserciones pasaron. (3) Script
+    Vite-SSR contra las APIs reales replicando la ráfaga exacta de `AnimeDetail.jsx` (6 llamadas en
+    paralelo): primera corrida encontró `/anime/20/episodes` genuinamente caído (confirmado también con
+    `curl` directo, HTTP 500 a los 11s) — expuso el Bug 2 de arriba en vivo; con el fix de timeout
+    aplicado, la misma ráfaga contra el mismo backend degradado devolvió **100 episodios reales** de
+    Naruto, además de ficha/personajes/relaciones/galería/recomendados completos.
+- **v2.1 — Sistema de reproducción: `PlaybackProviderManager` + reproductor real.** Ver la sección
+  "## Sistema de reproducción (v2.1)" arriba para el detalle completo. En corto: arquitectura desacoplada
+  idéntica en filosofía a `ProviderManager`, con AnimeThemes (openings/endings, contenido real y legal)
+  como único proveedor activo — Consumet/AnimeKai/AnimePahe/HiAnime quedaron como stubs inertes a
+  propósito (decisión de no construir infraestructura de streaming pirata, confirmada con el usuario, no
+  se reconsidera). Reproductor de video nativo hecho a mano (play/pausa/volumen/velocidad/fullscreen/PiP/
+  seek con buffer real/atajos de teclado/bloqueo mobile), episodios de `AnimeDetail.jsx` ahora clickeables
+  hacia `/anime/:id/ver/:episodeNumber`, "Continuar viendo" y autoplay-siguiente-episodio con cuenta
+  regresiva realmente escribiendo en Supabase (`watch_history.duration_seconds`, migración 0023;
+  `profiles_account.autoplay`, migración 0024). Límite de alcance real y documentado: AnimeThemes solo
+  tiene clips de OP/ED (~90s), no episodios completos — no existe hoy una fuente legal pública de
+  episodios completos para conectar.
+- **Post-v2.1 — Bug real corregido: Galería mostraba "Servidor ocupado" en vez de degradar a
+  EmptyState.** Investigación con reproducción en vivo (Vite-SSR contra la API real, no supuestos):
+  `/anime/{id}/pictures` de Jikan está actualmente degradado de verdad (504 "Jikan failed to connect to
+  MyAnimeList" verificado con `curl` para 9+ animes distintos, incluyendo los 5 pedidos para esta
+  verificación: Naruto/One Piece/Frieren/Attack on Titan/Solo Leveling — mientras `/anime/{id}`,
+  `/{id}/characters` y `/{id}/videos` responden bien). Eso por sí solo NO es el bug: `ProviderManager.
+  getGallery` (vía `firstSuccessful`) ya estaba diseñado para nunca lanzar salvo abort real, y una
+  reproducción en vivo confirmó que efectivamente resuelve a `[]` (no lanza) para los 5 animes, incluso
+  bajo ráfaga concurrente simulando los 6 `useFetch` reales de `AnimeDetail.jsx`. **La causa real
+  encontrada por grep**: `hooks/useFetch.js` era el ÚNICO lugar del código que reimplementaba la
+  detección de cancelación en vez de reusar `isAbortError()` de `apiCascade.js` (que ya usan
+  `ProviderManager`/`PlaybackProviderManager`/`searchService`/`characterSearchService`) — y su
+  reimplementación estaba incompleta: solo miraba `CanceledError`/`ERR_CANCELED` (los que fabrica la cola
+  propia de `api/jikan.js`), no `AbortError`. Galería es la sección más lenta con diferencia (~8-10s de
+  reintentos agotando el presupuesto de 4 contra un endpoint caído, contra <1.5s del resto) — la ventana
+  más grande para que un `useFetch` de Galería quede a mitad de un fetch cuando el usuario navega a otro
+  anime (p. ej. desde un link de Relacionados/Recomendados, sin desmontar `AnimeDetail.jsx` porque la
+  ruta reusa el mismo componente) y su `AbortController` se cancele a mitad de camino. Corregido
+  reemplazando el chequeo inline de `useFetch.js` por el mismo `isAbortError()` compartido. No se tocó el
+  mensaje de `ErrorState` ni el de `EmptyState` (pedido explícito) — el fix es puramente de clasificación
+  de errores, no de copy. Verificado: `getGallery` resuelve `[]` sin lanzar para los 5 animes pedidos
+  (Naruto/One Piece/Frieren/Attack on Titan/Solo Leveling, ~8.2-8.6s cada uno dado el estado actual de
+  Jikan) — cuando `/pictures` se recupere, la misma ruta devolverá imágenes reales sin cambios de código.
+- **Nota de proceso**: las entradas de "Notas técnicas actuales" para v2.2 (Reproducción Multi Provider),
+  v2.3 (AnimeDetail Premium), v2.4 (Smart Search Engine), v2.5 (Landing Premium + Login) y v2.6
+  (Recommendation Engine) — los 5 sprints reales entre este punto y v2.7 de abajo — no llegaron a
+  escribirse en este archivo (se perdieron en un corte de contexto de la sesión). El código de esos 5
+  sprints SÍ existe y está en uso (`providers/playback/{consumet,enime}/*`, el rediseño de
+  `AnimeDetail.jsx`/`components/anime/*`, `searchService.js`/`utils/searchRanking.js`, `Landing.jsx`/
+  `AuthCard.jsx`/`LoginMascot.jsx`, `services/recommendation/*` — todos verificables por `git status`/
+  lectura directa) — falta reconstruir su documentación acá. Pendiente, no se rellenó de memoria para no
+  arriesgar una descripción inexacta en el archivo que se trata como fuente de verdad.
+- **v2.7 — Media Hub: AnimeDetail como centro multimedia completo (Staff, Enlaces oficiales, Plataformas
+  de streaming), usando únicamente APIs públicas y legales — sin reproducción de episodios.** Auditoría
+  previa (releyendo `AnimeDetail.jsx`/`ProviderManager.js`/`AniListProvider.js`/`JikanProvider.js` byte a
+  byte, no de memoria) encontró que Tags/Trailer/Openings/Endings/Relaciones/Franquicia ya existían desde
+  v2.3 — el trabajo real de este sprint fueron 3 piezas genuinamente nuevas: Staff (reemplaza el
+  `EmptyState` fijo que existía desde v2.3), Enlaces oficiales y Plataformas oficiales de streaming
+  (ninguna existía).
+  - **Verificado en vivo antes de diseñar** (`curl` directo contra `graphql.anilist.co`, no supuesto):
+    Jikan tiene endpoints reales para esto (`/anime/{id}/staff`, `/anime/{id}/external`,
+    `/anime/{id}/streaming`) pero los 3 devolvieron 504 repetidamente durante la verificación (Jikan
+    degradado, mismo patrón documentado en toda esta sesión) — mientras que una única query GraphQL a
+    AniList con `staff`/`externalLinks`/`studios(isMain:true).siteUrl` devolvió datos reales completos
+    (confirmado con Naruto, mal_id 20: 10 miembros de staff con rol e imagen, incluyendo "Original
+    Creator"/"Director"/"Character Design"; 9 plataformas de streaming reales —Crunchyroll, Netflix, Hulu,
+    Tubi TV, Bilibili, iQ, YouTube, Hoopla×2 con `notes: "Dub"/"Sub"`—, cada una con ícono y color de marca
+    reales servidos por AniList; 1 enlace oficial no-streaming, "Official Site" → tv-tokyo.co.jp; y
+    `studios(isMain:true).siteUrl` real → `https://anilist.co/studio/1`).
+  - **Decisión de arquitectura — extender `AniListProvider.getAnime()` en vez de agregar métodos nuevos a
+    `ProviderManager`:** los 3 campos ya están disponibles en la MISMA query GraphQL que `getAnime()`
+    hace hoy — agregarlos ahí es una extensión de la respuesta existente, cero llamadas de red nuevas.
+    Agregar `getStaff()`/`getMediaLinks()` como métodos nuevos de `ProviderManager` habría significado 2
+    round-trips adicionales por carga de `AnimeDetail.jsx` para datos que la página YA está pidiendo —
+    exactamente lo que "nunca duplicar llamadas" (pedido explícito del sprint) prohíbe. `staff`,
+    `officialLinks`, `streamingPlatforms` y `studioLinks` se agregaron directo al objeto que
+    `AniListProvider.getAnime()`/`ProviderManager.getAnime()` ya devuelven — ver la nota nueva en "## API"
+    arriba.
+  - **Por qué Jikan no tiene un fallback real para estos 4 campos** (a diferencia de todos los demás
+    campos de `getAnime()`, que sí cascada AniList→Jikan): a diferencia de rank/popularity/producers/etc.
+    (que YA se piden en la llamada existente a Jikan, sin costo adicional), staff/enlaces de Jikan viven
+    en 3 endpoints SEPARADOS que hoy nadie llama — conectarlos habría significado 3 llamadas Jikan nuevas
+    en CADA carga de ficha, siempre, incluso cuando AniList (más confiable esta sesión) ya cubre el dato.
+    Se prefirió dejarlos AniList-only con Jikan ausente (`mergeAnimeFields` ya trata una clave ausente
+    como vacía sin necesidad de declarar `staff: []` explícito del lado Jikan) — decisión documentada, no
+    un descuido; queda como mejora futura conectar Jikan como respaldo real si AniList llegara a fallar
+    sistemáticamente para estos campos en particular.
+  - **`providers/models.js`** — 2 fábricas nuevas, mismo patrón que `createEpisode`/`createVideoSource`:
+    `createStaffMember({id, name, role, image, provider})` y
+    `createExternalLink({id, name, url, type, icon, color, language, note, provider})` (un solo shape
+    para "Enlaces oficiales" y "Plataformas de streaming" — solo cambia el filtro de `type` aplicado en
+    `AniListProvider.js`, no ameritaba 2 shapes distintos).
+  - **`AniListProvider.js`** — `ANIME_QUERY` suma `studios(isMain:true){nodes{id name siteUrl}}`,
+    `staff(perPage:10,sort:RELEVANCE){edges{role node{id name{full} image{medium}}}}` y
+    `externalLinks{id url site type language icon color notes isDisabled}`. 3 mappers nuevos:
+    `mapStaff()` (agrupa `edges` por persona — un miembro con 2 roles créditados aparece en 2 `edges`
+    distintos de AniList, ej. "Director" + "Storyboard" — y une los roles en un solo string en vez de
+    duplicar la tarjeta), `mapExternalLinks()` (separa `externalLinks` en `streamingPlatforms`
+    `type:'STREAMING'` vs. `officialLinks` todo lo demás, descarta `isDisabled:true`), `mapStudioLinks()`
+    (`anime.studios` de Jikan, string[], no se tocó — este es un campo aparte, `studioLinks`,
+    `{name,siteUrl}[]`, que `AnimeDetail.jsx` resuelve por coincidencia de nombre).
+  - **Alcance deliberadamente NO usado: `streamingEpisodes` de AniList.** La misma query de exploración
+    confirmó que AniList también expone URLs de streaming POR EPISODIO (`streamingEpisodes{title
+    thumbnail url site}`, ~26 entradas de Crunchyroll para Naruto) — se decidió NO usarlas: el sprint
+    prohíbe explícitamente "implementar reproducción de episodios", y una lista de links por episodio
+    hacia un reproductor externo se acerca demasiado a esa línea (además de quedar fuera del contrato ya
+    establecido de "Playback" = `PlaybackProviderManager`/AnimeThemes, que este sprint tampoco debía
+    tocar). "Dónde ver" usa únicamente `externalLinks` a nivel de ANIME completo (un link de salida por
+    plataforma, hacia la página de la serie en Crunchyroll/Netflix/etc., nunca hacia un episodio
+    puntual ni embebido en la app).
+  - **Componentes nuevos** (`components/anime/`, ninguno con lógica de datos embebida en JSX —
+    `resolveStudioSiteUrl()` en `AnimeDetail.jsx` resuelve el match estudio↔link fuera del render):
+    `StaffCard.jsx` (mismo lenguaje visual que `CharacterCard.jsx`; ícono `UserRound` de respaldo si
+    `image` viene `null` — AniList no siempre tiene foto de cada miembro, confirmado en vivo con "Art
+    Director" de Naruto sirviendo el `default.jpg` genérico de su propio CDN), `ExternalLinkCard.jsx`
+    (enlace de salida genérico, ícono `Globe` de respaldo), `StreamingPlatformBadge.jsx` (mismo shape,
+    con el `color` de marca real de AniList como acento puntual — borde izquierdo de 4px, nunca fondo
+    completo, mismo criterio de "gradientes/color solo suave" que ya aplica el resto del diseño; esto es
+    branding de terceros reales, no una segunda excepción a la paleta de marca de AnimeCLZ). `StudioCard.jsx`
+    (existente desde v2.3) gana un prop opcional `siteUrl`: con match se vuelve un link real a la página
+    del estudio en AniList, sin match se ve exactamente igual que antes.
+  - **`AnimeDetail.jsx`** — Staff pasa del `EmptyState` fijo de v2.3 a una grilla real (con su propio
+    `EmptyState` solo si `anime.staff` viene vacío de verdad, no como promesa de "sprint futuro" — ya está
+    conectado). 2 secciones nuevas, "Dónde ver" (streamingPlatforms) y "Enlaces oficiales" (officialLinks),
+    insertadas después de Temporadas/Franquicia y antes de Comentarios — ambas se ocultan por completo si
+    la lista viene vacía (mismo criterio que Trailer/Géneros: contenido complementario, no un hueco que
+    amerite pedir disculpas). Estudios gana el link opcional descrito arriba.
+  - **Skeletons (task 6) — decisión explícita de NO agregar uno nuevo para estas 3 secciones**: a
+    diferencia de Personajes/Episodios/Galería/Recomendados/Relaciones (cada una su propio `useFetch`
+    independiente, con su propio timing de carga), Staff/Enlaces oficiales/Dónde ver son campos DEL MISMO
+    objeto `anime` que la página ya espera antes de renderizar cualquier sección (`if (loading) return
+    <LoadingState variant="hero" />` corta el render entero mientras `anime` carga) — mismo criterio ya
+    usado por Información/Sinopsis/Estadísticas/Géneros/Estudios, que tampoco tienen skeleton propio.
+    Agregar uno ahí sería código muerto que nunca se muestra.
+  - **Verificado en vivo, no solo build/lint**: script Vite-SSR contra las APIs reales — 14/14
+    aserciones: `AniListProvider.getAnime(20)` trae `staff`/`streamingPlatforms`/`officialLinks`/
+    `studioLinks` reales y con la forma esperada; `ProviderManager.getAnime(20)` conserva los 4 campos
+    después del merge con Jikan, y `merged.studios` sigue siendo `string[]` de Jikan sin cambios (prueba
+    de que no se rompió ese campo existente); un id inexistente resuelve `null` sin lanzar tanto en
+    AniList (404 propio de AniList para un `idMal` sin match) como en el cascade completo de
+    `ProviderManager` (con Jikan devolviendo su 504 habitual en paralelo) — el `Promise.allSettled` ya
+    existente en `runGetAnime` maneja ambos fallos sin código nuevo.
+  - **Restricciones respetadas, verificado por timestamp** (`ls --time-style=full-iso`): `Search.jsx`
+    (20:43:39 del 12/07), `Landing.jsx` (23:31:46), `Login.jsx` (23:36:57), `pages/admin/*`, `context/
+    ProfileContext.jsx` (13:25:52), `services/recommendation/*` (hasta 00:04:12 del 13/07) y
+    `providers/playback/**`/`pages/Watch.jsx` — todos con última modificación ANTES del primer archivo
+    tocado en este sprint (`AniListProvider.js`, 00:18:14) — ninguno se tocó.
+  - **No implementado, fuera de alcance a propósito**: reproducción de episodios (prohibido
+    explícitamente); logo/descripción de estudio (AniList no los expone en `studios`, solo `siteUrl` —
+    Jikan tampoco sin un segundo endpoint `/producers/{id}` no conectado); `streamingEpisodes` de AniList
+    (decisión explícita de no usarlos, ver arriba); Jikan como fallback real de staff/enlaces (ver
+    decisión de arquitectura arriba).
+- **v2.8 — Quality, Performance & Stabilization: auditoría completa + corrección de lo encontrado, sin
+  funciones nuevas ni cambios de arquitectura.** Pedido explícito del usuario: "Corregir únicamente
+  problemas encontrados" — documentar todo antes de tocar código (FASE 1), aplicar solo mejoras con
+  beneficio real (FASE 2-5), actualizar documentación solo si hay cambios importantes (FASE 6).
+  - **Hallazgo más importante — contraste WCAG del botón primario, verificado matemáticamente (fórmula de
+    luminancia relativa, no una apreciación visual):** `bg-primary text-white` (el patrón del botón
+    primario — el elemento más repetido de la app: Login, Registro, "Ver Ahora", "Aplicar" filtros,
+    "Crear cuenta", badges "Visto"/"Filler", etc.) **no cumplía WCAG AA (4.5:1) en NINGÚN tema de los 7**:
+    Original 3.22:1, Purple Night 3.41:1 (ambos fallan igual, aunque menos mal), y **severamente** en
+    Ocean Blue (2.38:1), Sakura Pink (2.37:1), Emerald (2.22:1), Sunset Orange (2.34:1) y Cyber Neon
+    (1.54:1 — prácticamente ilegible). El patrón aparecía 11 veces en 10 archivos, no solo en
+    `Button.jsx`: `EpisodeCard.jsx` (badge "Visto"), `RoadmapTimeline.jsx`, `NextEpisodeOverlay.jsx`,
+    `AvatarCandidateCard.jsx`, `AvatarPicker.jsx` (tab activo), `AccountMenu.jsx`, `Navbar.jsx`,
+    `Explore.jsx`, `Search.jsx` (botones "Aplicar"/"Cerrar" del Drawer de filtros).
+    - **Corrección, confirmada con el usuario antes de aplicar** (dado el alcance visual — es el CTA más
+      repetido de toda la app): nuevo token `--color-on-primary` por tema en `src/styles/index.css`, que
+      reutiliza el propio `--color-background` de ESE MISMO tema como color de texto sobre `--color-
+      primary` — no inventa ningún color nuevo ni toca los hues de marca ya confirmados en sprints
+      anteriores. Verificado matemáticamente: pasa AA con margen amplio en los 7 temas (5.68:1–13.22:1).
+      Los 11 usos de `text-white` junto a `bg-primary` pasaron a `text-on-primary`.
+  - **Performance — bundle:** `npm run build` marcaba el chunk principal (`index-*.js`) con la
+    advertencia propia de Vite por superar 500KB (598.65KB real, gzip 198.32KB) — solo `@supabase/
+    supabase-js` tenía `manualChunks` propio; `framer-motion`/`@headlessui/react` (usadas en casi toda la
+    app, no candidatas a code-splitting por ruta) viajaban dentro del chunk principal. Se agregaron sus
+    propios `manualChunks` en `vite.config.js` (`motion`/`headless-ui`) — el chunk principal bajó a
+    363.73KB (gzip 119.15KB), sin advertencia de Vite. Mismo total de bytes de red en una carga en frío;
+    la ganancia real es cacheo entre despliegues (esas librerías no cambian de versión tan seguido como el
+    código de la app) y descarga en paralelo vía HTTP/2 en vez de un único archivo secuencial.
+  - **Race condition real (4 archivos) — `setTimeout` antes de `navigate()`/actualizar estado, sin
+    limpiar al desmontar:** `Login.jsx`/`Register.jsx` (700ms), `ProfileSelect.jsx`
+    (`SELECT_TRANSITION_MS`, 260ms) y, la ventana más larga, `ResetPassword.jsx` (2000ms) — si el usuario
+    navegaba a otro lado (botón atrás, otro link) DENTRO de esa ventana, el `setTimeout` disparaba igual
+    más tarde y `navigate()` producía una redirección sorpresa hacia una página que el usuario ya no
+    estaba mirando. Corregido con el mismo patrón en los 4: un `useRef` guarda el id del timeout, un
+    `useEffect(() => () => clearTimeout(ref.current), [])` lo cancela al desmontar.
+  - **Duplicación real de componentes:** `components/admin/StatCard.jsx` y `components/anime/
+    StatCard.jsx` — mismo patrón visual (icono en círculo + etiqueta + valor en una tarjeta), mismo
+    contrato de props base (`icon`/`label`/`value`), solo diferían en layout (vertical "número grande" del
+    Dashboard vs. horizontal compacto de AnimeDetail) y en política de vacío (Skeleton+"—" vs. ocultar la
+    tarjeta entera). Consolidados en `components/ui/StatCard.jsx` (agnóstico de dominio, ver
+    "Arquitectura" arriba — `ui/` es exactamente el lugar para esto) con una prop `variant` (`"dashboard"`
+    default / `"compact"`) que preserva el comportamiento exacto de cada uno de los dos originales, ambos
+    eliminados.
+  - **Auditoría exhaustiva, con hallazgo de "ya está bien hecho" en cada área — verificado por grep/
+    lectura directa, no asumido:** cobertura de `AbortController`/guardas de carrera (patrón `active =
+    true/false` en el cleanup de `useEffect`, ya consistente en los ~15 efectos con llamadas async del
+    proyecto, incluyendo `useUserCollection.js`/`AuthContext.jsx`/`AvatarPicker.jsx`); memoización de
+    `value` en los 5 Context principales (`AuthContext`/`ProfileContext`/`ThemeContext`/
+    `FavoritesContext`/`WatchLaterContext`, los 5 ya usan `useMemo`); limpieza de event listeners (los ~15
+    `addEventListener` del proyecto ya tienen su `removeEventListener` en el cleanup) y de timers
+    (`setInterval`/la mayoría de `setTimeout` ya con `clearInterval`/`clearTimeout`, salvo los 4 de
+    arriba); CLS de imágenes (los 19 `<img>`/`motion.img` del proyecto ya reservan su espacio vía clases
+    `aspect-[2/3]`/`aspect-video`/tamaño fijo de Tailwind — funcionalmente equivalente a los atributos
+    `width`/`height` HTML que pide `docs/13_PERFORMANCE.md`, y más correcto para imágenes responsive);
+    `aria-label` en botones solo-ícono (ya presente 1:1 en cada botón de acción de `Users.jsx`/
+    `News.jsx`/`Comments.jsx`, `PlayerControls.jsx`, `Pagination.jsx`, `AccountMenu.jsx`, `Modal.jsx`);
+    `key={index}` (los ~13 usos que aparecen son todos sobre `Array.from({length: N})` de skeletons
+    estáticos, el único caso donde ese patrón es correcto); sin imports/variables muertos (`no-unused-
+    vars` de ESLint ya en 0 antes de empezar); sin llamadas directas a `axios`/`fetch` fuera de
+    `services`/`providers`/`api` (el único "hallazgo" de un grep inicial era un falso positivo:
+    `refetch()` contiene la subcadena `fetch(`).
+  - **Diferido a otro sprint, documentado, no un descuido:** el warning `react-hooks/set-state-in-effect`
+    de `useFetch.js`/`useUserCollection.js`/`Search.jsx` ya está downgradeado a `warn` desde el
+    `eslint.config.js` original (v0.8/Sprint 3.6) con la razón documentada ahí mismo — arreglarlo de raíz
+    necesita reescribir el patrón de "cache hit síncrono" a "derive state during render", un cambio de
+    arquitectura del hook de datos más usado de la app, fuera de alcance de "No modificar la arquitectura"
+    de este sprint. Reconstruir las entradas de CLAUDE.md/ROADMAP.md para v2.2–v2.7 (ver la nota de
+    proceso más arriba) tampoco se hizo en este sprint — es documentación faltante de sprints anteriores,
+    no un hallazgo de calidad de v2.8.
+  - **Build/Lint**: `npm run build` y `npm run lint` limpios tras cada cambio — 0 errores de lint, mismos
+    14 warnings preexistentes (ninguno nuevo); build sin la advertencia de chunk grande de Vite (ver
+    arriba).
+- **v3.1 — Sync Engine: cola de mutaciones offline, no un sistema de sincronización paralelo.** Pedido
+  del usuario: un "SyncManager" que sincronice Favoritos/Mi Lista/Historial/Continuar viendo/
+  Recomendaciones/Configuración/Tema/Perfil entre dispositivos, con cola offline, reintentos automáticos
+  y resolución de conflictos ("última modificación", "nunca duplicar datos").
+  - **Hallazgo de auditoría que define todo el diseño (FASE 1, verificado leyendo el código real, no
+    supuesto):** en esta app, "sincronizar entre dispositivos" ya ocurre hoy automáticamente para casi
+    todo, porque Supabase ES la única fuente de verdad — cada dispositivo lee/escribe las mismas filas
+    directamente, sin una copia local propia que pueda divergir. Favoritos/Mi Lista
+    (`collectionService.js`, ya usa `upsert`/`delete` filtrado por `profile_id`), Historial/Continuar
+    viendo (`historyService.upsertProgress`, ya `upsert`), Tema/Autoplay/Perfil
+    (`profilesAccountService.updateProfile`, ya un PATCH por campo) — los 3 ya estaban sincronizados de
+    verdad, ya sin duplicados (constraints únicos de cada tabla). "Configuración" en la práctica son solo
+    Tema y Autoplay — Idioma/Notificaciones/Privacidad en `Settings.jsx` son tarjetas sin estado, nada que
+    sincronizar ahí. "Recomendaciones" se calculan en el cliente a partir de datos YA sincronizados,
+    cacheadas solo en memoria (`utils/cache.js`) — no hay nada que escribir, es 100% derivado. Confirmado
+    por grep: cero detección online/offline en todo el proyecto antes de este sprint, cero patrón de
+    cola/outbox para datos, cero uso de IndexedDB (`localStorage` es la única persistencia que la app usó
+    siempre). **Conclusión:** la única divergencia real posible es cuando un dispositivo está offline en
+    el momento de escribir — por eso "SyncManager" se construyó como una cola de mutaciones offline, no
+    como una capa de sincronización redundante que hubiera significado tocar la arquitectura de datos ya
+    probada de toda la app.
+  - **`src/services/sync/offlineQueue.js` (nuevo)** — persistencia pura, sin conocimiento de Supabase.
+    Entradas `{key, type, payload, createdAt}`; `upsertEntry` reemplaza por `key` (última intención gana:
+    togglear un favorito on/off/on offline colapsa a una sola entrada) o, con `merge: true`, fusiona el
+    `payload` nuevo sobre el existente (lo usa `profile:update`, para que dos ediciones offline distintas
+    — tema y luego autoplay — sobrevivan ambas en vez de que la segunda pise a la primera). Storage:
+    `localStorage` con `try/catch` (JSON corrupto, `QuotaExceededError` de Safari privado) cayendo en
+    silencio a un `Map` en memoria — también hace el módulo testeable sin navegador/jsdom.
+  - **`src/services/sync/SyncManager.js` (nuevo)** — orquestador, plain JS, nunca dentro de React (mismo
+    principio que `ProviderManager` con sus Providers: nunca importa un servicio, cada servicio registra
+    su propio `type` con `registerHandler()`, evita el import circular y lo mantiene agnóstico de
+    dominio). `createSyncManager({isOnline, storage})` es una factory (permite instancias independientes
+    para tests — "2 dispositivos" simulados con storage separado) con un `export default` singleton para
+    la app real. `run({type, key, payload, merge, ownErrorMessage, optimisticResult}, executeFn)`: si
+    `!isOnline()`, encola directo (nunca llama a `executeFn`) y resuelve `optimisticResult` (o
+    `undefined`) — optimista, no revierte la UI. Si hay conexión, llama a `executeFn()` igual que siempre;
+    si lanza, distingue error real de fallo de red **sin sniffear el tipo/mensaje de la excepción nativa
+    de fetch** (frágil, varía por navegador): compara `err.message` contra `ownErrorMessage`, el mensaje
+    genérico que ese MISMO servicio ya usa para un error real de Supabase (patrón `if (error) throw new
+    Error(GENERIC_ERROR)` ya establecido en toda la app) — si coincide, error real, se re-lanza (preserva
+    el revert optimista de `useUserCollection.js`); si no, nunca llegó a ese chequeo porque `fetch` mismo
+    falló, se encola igual que offline. `flush()` repite cada entrada con su handler registrado, para en
+    el primer fallo (no sigue intentando el resto). Auto-flush: `window.addEventListener('online', flush)`
+    al cargar el módulo + un flush inicial **diferido con `queueMicrotask`** (nunca síncrono: los 3
+    servicios que importan este módulo recién registran sus handlers DESPUÉS de que termina de evaluarse
+    este archivo — ES modules resuelven el grafo de imports antes de reanudar al importador — un flush
+    síncrono correría siempre con la lista de handlers vacía; encontrado en la revisión de diseño antes de
+    escribir código, no en producción).
+  - **Integración — 3 archivos existentes, wrap mínimo, cero cambio de comportamiento con conexión**:
+    `collectionService.js` (la lógica de `add`/`remove` de siempre pasa a `rawAdd`/`rawRemove`, envueltas
+    en `syncManager.run`, registradas como `collection:${table}:add`/`collection:${table}:remove` — cubre
+    Favoritos y Mi Lista con un solo cambio, la factory ya es compartida por ambas), `historyService.js`
+    (mismo wrap para `upsertProgress`, `history:${profileId}:${malId}:${episodeNumber}` — cubre Historial
+    y Continuar viendo), `profilesAccountService.js` (mismo wrap para `updateProfile`, `profile:${id}`,
+    `merge: true`).
+  - **Bug real encontrado y corregido durante la implementación (no en el diseño aprobado, un detalle que
+    solo se vio al cablear `profilesAccountService.js`):** el diseño original pasaba `payload: {id,
+    fields: {...}}` (anidado) — pero `offlineQueue.upsertEntry`'s `merge: true` hace un merge SUPERFICIAL
+    (`{...existing.payload, ...payload}`), así que la segunda edición offline reemplazaba el objeto
+    `fields` completo de la primera en vez de combinarse campo por campo (verificado con el script de
+    prueba: la aserción de "ambos campos presentes" falló, mostrando solo el último campo). Corregido
+    aplanando el payload (`{id, ...fields}`) — el handler registrado le pasa el objeto completo a
+    `rawUpdateProfile(id, fields)`, que solo destructura las claves que le interesan, así que la `id` de
+    más no molesta.
+  - **Segundo ajuste real encontrado durante la implementación:** `profilesAccountService.updateProfile`
+    devuelve la fila completa actualizada, y `ProfileContext.updateProfileById` hacía
+    `setProfiles((prev) => prev.map((p) => p.id === id ? updated : p))` — un reemplazo TOTAL. Si
+    `updateProfile` resolvía `undefined` al encolar offline (como sí es correcto para `collectionService`/
+    `historyService`, cuyos llamadores no leen el valor resuelto), ese reemplazo total habría dejado el
+    perfil local en `undefined`, rompiendo la UI. Se agregó `optimisticResult` a la firma de
+    `SyncManager.run()` (opcional, `undefined` por defecto — no cambia ningún otro call site) para que
+    `updateProfile` resuelva `{id, ...fields}` en vez de nada, y se cambió
+    `ProfileContext.updateProfileById` de reemplazo total a fusión (`{...profile, ...updated}`) — con
+    conexión no cambia nada (`updated` ya es la fila completa, fusionar todas las claves da lo mismo que
+    reemplazar); sin conexión, preserva rol/avatar/activo/etc. mientras la edición sigue encolada.
+  - **Fuera de alcance, documentado explícitamente (no un descuido):** `createProfile`/`deactivateProfile`
+    no se envuelven — dependen de triggers de validación del estado actual del servidor
+    (`enforce_max_profiles`, `protect_profile_account_deletion`) que sería riesgoso repetir a ciegas más
+    tarde sin revalidar. Indicador visual de "cambios pendientes de sincronizar" en la UI — no se pidió
+    una funcionalidad nueva de interfaz, solo el motor. Un chequeo de timestamp servidor-vs-local antes de
+    repetir una edición de perfil encolada — se consideró y se descartó (ver revisión de diseño): como
+    `updateProfile` ya es PATCH por campo, comparar por fila completa habría descartado incorrectamente un
+    campo no conflictivo solo porque otro campo distinto se editó más recientemente desde otro
+    dispositivo; al ser PATCH por campo, "última modificación gana" ya sale solo del orden real de
+    escritura en Supabase.
+  - **Verificado en vivo, no solo build/lint**: script Node (Vite-SSR) con 17 aserciones — encolar
+    offline sin llamar a `executeFn`; togglear add→remove→add offline colapsa a una sola entrada con el
+    último estado; reconexión + `flush()` invoca el handler correcto y vacía la cola; 2 instancias
+    independientes ("2 dispositivos") editando campos DISTINTOS del mismo perfil offline terminan con
+    AMBOS campos aplicados en un objeto "servidor" falso compartido (nunca uno pisando al otro); 2
+    instancias editando el MISMO campo offline resuelven a un valor único, consistente, según qué flush
+    llega último (nunca corrupto/duplicado); la fusión de dos ediciones offline en una sola entrada
+    conserva ambos campos; una entrada encolada sobrevive a una instancia nueva de `SyncManager` sobre el
+    mismo storage (simula recargar la app offline); un error real se re-lanza y nunca se encola; una
+    excepción que no es el error conocido del servicio (fallo de red en pleno vuelo, con conexión) sí se
+    encola. Las 17 pasaron.
+  - **Build/Lint**: limpios — 0 errores, mismos 14 warnings preexistentes; bundle principal +2KB
+    (esperado, código nuevo), sin acercarse al umbral de advertencia de Vite.
+- **v3.2 — Backend Gateway & Observability: preparación de infraestructura, sin servidor propio ni
+  cambios de UI.** Pedido del usuario: preparar una migración gradual a un Backend Gateway propio —
+  capa Gateway, sistema de métricas, Health Monitor, objeto serializable para un futuro panel, cache
+  metrics — sin crear un servidor todavía y sin tocar UI/Search/Landing/Login/Recommendation Engine/
+  SyncManager/Playback.
+  - **Auditoría (FASE 1)**: AniList se consulta desde `AniListProvider.js` (7 métodos de
+    `ProviderManager`) y, por separado y a propósito, desde `searchService.js`/`characterSearchService.js`
+    (cascada de búsqueda, bypass ya documentado desde v1.7 — no se tocó). Jikan se consulta desde
+    `animeService.js` (20 funciones), usado por `AnimeProvider.js` (8 páginas de catálogo aún no
+    migradas) y por `JikanProvider.js` (adaptador de `ProviderManager`). AnimeThemes se consulta
+    únicamente desde `AnimeThemesProvider.js` (`PlaybackProviderManager`, 2 métodos). "Datos duplicados":
+    `search()`/`getAnime()` ya consultan AniList Y Jikan en paralelo para el mismo id/query a propósito
+    (fusión de campos, no duplicación accidental — ya documentado desde v1.9/v2.0); no se encontró ninguna
+    llamada duplicada por descuido. "Críticas": `getAnime()` (cada carga de `AnimeDetail.jsx`) y
+    `search()` (cada tecla en el buscador, contra el endpoint de Jikan ya documentado como el más frágil
+    de toda la API).
+  - **Decisión de alcance, antes de escribir código**: AnimeThemes/Playback quedan **fuera** del Gateway y
+    de toda la observabilidad nueva — "Playback" está en la lista de restricciones de este sprint, y
+    `api/animethemes.js` es transporte dedicado y exclusivo de ese subsistema. Se instrumentaron
+    únicamente AniList y Jikan (los dos proveedores detrás de `ProviderManager`, que no está en la lista
+    de restricciones). El Health Monitor y el Dashboard igual incluyen una entrada para `animethemes`,
+    marcada explícitamente `tracked: false` con el motivo — para que el shape ya esté listo el día que
+    esto cambie, en vez de omitirla en silencio.
+  - **`src/services/gateway/Gateway.js` (nuevo, FASE 2)** — fachada de alto nivel, hoy un pass-through
+    directo a los 7 métodos de `ProviderManager.js` (que sigue siendo, sin cambios, el único responsable
+    de decidir proveedor/orden/merge/caché — ver docs/06_PROVIDER_MANAGER.md). Ninguna página existente
+    se migró a importar desde acá (pedido explícito "No modificar la UI") — es un punto de entrada nuevo
+    y paralelo, listo para que código futuro lo adopte gradualmente, y para que el día que exista un
+    backend real, solo estas funciones cambien de "llamar a ProviderManager en el mismo proceso" a "hacer
+    fetch a un endpoint propio", sin tocar ninguna página.
+  - **`src/services/gateway/metrics.js` (nuevo, FASE 3)** — registro en memoria, `MAX_ENTRIES=200` por
+    lista (acotado, nunca crece sin límite), **solo activo en desarrollo**
+    (`if (!import.meta.env.DEV) return` como primera línea de cada función de registro — Vite reemplaza
+    esa constante por `false` en build de producción, así que el minificador elimina el resto del cuerpo:
+    verificado en vivo, el bundle de producción no creció ni un byte tras instrumentar 3 archivos
+    críticos). `recordProviderCall()` (cache hit/miss/stale, duración, proveedor detectado, éxito) +
+    `recordRetry()` (proveedor, status, si fue timeout de cliente) + `detectProviderTag()` (heurística
+    pura: usa `result.source` si existe —ya lo pone `getAnime()`—, si no el `.source` del primer item de
+    un array/`.data[]` —ya lo taggean `search()`/`getCharacters()`/etc.—, si no `'unknown'`; nunca
+    inventa un proveedor que no se pueda inferir del dato real).
+  - **`src/services/gateway/healthMonitor.js` (nuevo, FASE 4)** — deriva salud por proveedor
+    (`availability`, `avgLatencyMs`, `lastError`, `lastSuccess`, `retryCount`) a partir de lo que
+    `metrics.js` ya registró, sin hacer ninguna llamada de red propia. **Nota de honestidad**:
+    `ProviderManager` nunca propaga una excepción salvo abort real (ver docs/06_PROVIDER_MANAGER.md,
+    "La UI jamás conoce" fallos crudos) — así que "último error" acá significa genuinamente "última vez
+    que este proveedor contribuyó un resultado vacío", no una excepción con mensaje real; documentado así
+    en vez de simular un mensaje de error que no existe.
+  - **`src/services/gateway/cacheMetrics.js` (nuevo, FASE 6)** — combina dos fuentes: hit/miss ratio de
+    `metrics.js` (cada llamada ya trae `cacheHit`) + TTL restante por entrada viva de
+    `utils/cache.js`'s nuevo `getCacheSnapshot(prefix)` (introspección de solo lectura del `Map` interno,
+    namespace `pm:` — no cambia ninguna función existente de ese archivo, es un export nuevo y aparte).
+  - **`src/services/gateway/dashboard.js` (nuevo, FASE 5)** — `getGatewayDashboardSnapshot()`: un objeto
+    100% serializable (verificado con un roundtrip real de `JSON.stringify`/`JSON.parse`, no solo
+    asumido) que combina `healthMonitor` + `cacheMetrics` — **sin ninguna pantalla ni ruta nueva**, tal
+    como pide explícitamente la FASE 5 ("No crear aún la pantalla").
+  - **Instrumentación mínima de 3 archivos existentes, comportamiento observable sin cambios**:
+    `ProviderManager.js`'s `withCache()` (el único choque de los 7 métodos — se agregó una medición de
+    tiempo + 3 llamadas a `recordProviderCall` en sus 3 ramas ya existentes —cache hit, fresco, stale—,
+    la lógica de caché en sí no se tocó) y `api/jikan.js`/`api/anilist.js` (una llamada a `recordRetry()`
+    dentro del interceptor de reintento YA existente, en la misma línea donde ya se incrementaba
+    `config.__retryCount` — no se tocó cuándo/cómo se reintenta, solo se agregó la observación).
+  - **Verificado en vivo, no solo build/lint**: script Vite-SSR con 24 aserciones — `detectProviderTag`
+    con fixtures puros (5); `Gateway.getAnime(20)` (Naruto) contra las APIs reales, pass-through fiel a
+    `ProviderManager`, primera llamada cache MISS con proveedor detectado `anilist+jikan` (5); segunda
+    llamada al mismo id, cache HIT, 0ms (2); Health Monitor refleja las llamadas reales, `animethemes`
+    marcado `tracked:false` (3); Cache Metrics con hit ratio exacto (0.5 tras 1 hit/1 miss) y TTL restante
+    real > 0 (4); **fallback real, no simulado**: una entrada manualmente sembrada como vencida
+    (`setCached` con TTL negativo) para un id inexistente (que hace que AMBOS proveedores reales
+    devuelvan vacío) se sirvió igual gracias al mecanismo de "último resultado válido" ya existente de
+    `ProviderManager` — y la métrica lo registró correctamente como `stale: true` (2); Dashboard
+    serializable con los 3 proveedores (3). **Bonus real, no buscado a propósito**: la corrida capturó
+    4 reintentos reales de Jikan (504) durante la prueba — prueba en vivo, sin mockear nada, de que
+    `recordRetry()` funciona de punta a punta contra la degradación real de Jikan ya documentada en toda
+    esta sesión. Las 24 pasaron.
+  - **Qué queda preparado para un backend propio** (FASE 2, resumen): el día que exista un servidor real,
+    el plan es que `Gateway.js` deje de llamar a `ProviderManager` en el mismo proceso y en cambio haga
+    `fetch` a un endpoint propio — ninguna página necesita tocarse porque ya ninguna importa de
+    `ProviderManager` directo salvo a través de este Gateway (una vez que se migren, en un sprint futuro).
+    El sistema de métricas/health monitor/cache metrics ya tiene la forma de datos que un backend real
+    reportaría igual (duración, proveedor, cache hit, reintentos) — no haría falta rediseñarlo, solo
+    cambiar de dónde vienen los números.
+  - **Build/Lint**: limpios — 0 errores, mismos 14 warnings preexistentes; bundle de producción
+    **byte-idéntico** antes/después (365.91KB) — la instrumentación entera se elimina en el build gracias
+    al gate `import.meta.env.DEV`.
 
 ## Objetivo final
 

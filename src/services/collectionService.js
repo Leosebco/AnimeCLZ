@@ -1,4 +1,5 @@
 import { supabase, isSupabaseConfigured } from '@/lib/supabase'
+import syncManager from '@/services/sync/SyncManager'
 
 const GENERIC_ERROR = 'No pudimos guardar tu lista. Inténtalo nuevamente.'
 
@@ -38,6 +39,11 @@ function fromRow(row) {
  * propia lista, y se borra de verdad cuando su perfil se elimina. `user_id`
  * se sigue mandando en `add` (columna NOT NULL, y la policy de RLS todavía
  * exige `auth.uid() = user_id`) pero ya no es lo que filtra `list`/`remove`.
+ *
+ * v3.1 — Sync Engine: `add`/`remove` pasan por `SyncManager.run()` — con
+ * conexión, comportamiento idéntico a siempre (llama a `rawAdd`/`rawRemove`
+ * de inmediato); sin conexión, encola la operación y resuelve optimista
+ * (no revierte la UI) en vez de rechazar. Ver `services/sync/SyncManager.js`.
  */
 export function createCollectionService(table) {
   async function list(profileId) {
@@ -51,8 +57,7 @@ export function createCollectionService(table) {
     return data.map(fromRow)
   }
 
-  async function add(accountId, profileId, anime) {
-    if (!isSupabaseConfigured || !accountId || !profileId) throw new Error(GENERIC_ERROR)
+  async function rawAdd(accountId, profileId, anime) {
     const { error } = await supabase
       .from(table)
       .upsert(
@@ -62,10 +67,46 @@ export function createCollectionService(table) {
     if (error) throw new Error(GENERIC_ERROR)
   }
 
-  async function remove(profileId, malId) {
-    if (!isSupabaseConfigured || !profileId) throw new Error(GENERIC_ERROR)
+  async function rawRemove(profileId, malId) {
     const { error } = await supabase.from(table).delete().eq('profile_id', profileId).eq('mal_id', malId)
     if (error) throw new Error(GENERIC_ERROR)
+  }
+
+  // v3.1 — Sync Engine: se registra un par por tabla (favorites/
+  // watch_later, cada una llama a createCollectionService por separado) —
+  // SyncManager los usa para repetir una operación encolada al volver la
+  // conexión, sin que este archivo sepa cuándo eso ocurre.
+  syncManager.registerHandler(`collection:${table}:add`, (payload) =>
+    rawAdd(payload.accountId, payload.profileId, payload.anime),
+  )
+  syncManager.registerHandler(`collection:${table}:remove`, (payload) =>
+    rawRemove(payload.profileId, payload.malId),
+  )
+
+  async function add(accountId, profileId, anime) {
+    if (!isSupabaseConfigured || !accountId || !profileId) throw new Error(GENERIC_ERROR)
+    return syncManager.run(
+      {
+        type: `collection:${table}:add`,
+        key: `collection:${table}:${profileId}:${anime.id}`,
+        payload: { accountId, profileId, anime },
+        ownErrorMessage: GENERIC_ERROR,
+      },
+      () => rawAdd(accountId, profileId, anime),
+    )
+  }
+
+  async function remove(profileId, malId) {
+    if (!isSupabaseConfigured || !profileId) throw new Error(GENERIC_ERROR)
+    return syncManager.run(
+      {
+        type: `collection:${table}:remove`,
+        key: `collection:${table}:${profileId}:${malId}`,
+        payload: { profileId, malId },
+        ownErrorMessage: GENERIC_ERROR,
+      },
+      () => rawRemove(profileId, malId),
+    )
   }
 
   return { list, add, remove }

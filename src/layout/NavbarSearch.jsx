@@ -11,6 +11,14 @@ import { ROUTES, animeDetailPath } from '@/constants'
 
 const EMPTY_RESULTS = { anime: [], characters: [], degraded: false }
 
+// v2.4 — 8 sugerencias combinadas en total (pedido explícito del sprint de
+// búsqueda: "Autocompletado... Máximo: 8 sugerencias"), repartidas 5
+// anime + 3 personajes — ya venían ordenadas por relevancia real desde
+// `searchService.searchAll` (ranking v2.4), así que cortar acá no pierde
+// el mejor resultado.
+const MAX_ANIME_SUGGESTIONS = 5
+const MAX_CHARACTER_SUGGESTIONS = 3
+
 /**
  * Expanding, animated search trigger for the Navbar. Dos variantes según
  * viewport (mismo estado/lógica de fetch, dos bloques JSX condicionados por
@@ -33,9 +41,16 @@ function NavbarSearch() {
   const containerRef = useRef(null)
   const navigate = useNavigate()
 
+  // v2.4 — cacheKey agregado (antes no tenía ninguno: cada tecla disparaba
+  // una consulta nueva sin cachear, incluso repitiendo una ya resuelta por
+  // esta misma barra o por /buscar). Mismo formato de clave que
+  // `Search.jsx` (`search:${query}:${JSON.stringify(filters)}`, acá
+  // siempre `{}` porque el Navbar nunca aplica filtros) — así una consulta
+  // ya resuelta en una pantalla se reusa en la otra sin pedirla de nuevo.
   const { data, loading } = useFetch(
     (signal) => (trimmedQuery ? searchAll(trimmedQuery, {}, signal) : Promise.resolve(EMPTY_RESULTS)),
     [trimmedQuery],
+    { cacheKey: trimmedQuery ? `search:${trimmedQuery}:{}` : undefined, cacheTTL: 10 * 60 * 1000 },
   )
   const results = data ?? EMPTY_RESULTS
   const hasResults = results.anime.length > 0 || results.characters.length > 0
@@ -100,7 +115,7 @@ function NavbarSearch() {
               <p className="px-1.5 pb-1 text-[11px] font-semibold uppercase tracking-wide text-text-secondary">
                 Anime
               </p>
-              {results.anime.slice(0, 4).map((anime) => (
+              {results.anime.slice(0, MAX_ANIME_SUGGESTIONS).map((anime) => (
                 <Link
                   key={anime.id}
                   to={animeDetailPath(anime.id)}
@@ -132,7 +147,7 @@ function NavbarSearch() {
               <p className="px-1.5 pb-1 text-[11px] font-semibold uppercase tracking-wide text-text-secondary">
                 Personajes
               </p>
-              {results.characters.slice(0, 3).map((character) => (
+              {results.characters.slice(0, MAX_CHARACTER_SUGGESTIONS).map((character) => (
                 <div key={character.id} className="flex items-center gap-3 rounded-xl p-1.5">
                   <img
                     src={character.image}

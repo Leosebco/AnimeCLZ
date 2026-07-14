@@ -21,8 +21,16 @@ const SCORE_CHIPS = [{ value: '', label: 'Cualquiera' }, ...MIN_SCORE_OPTIONS]
  * opciones para mostrarse todas a la vez. Compartido por Explorar y Buscar
  * (en Buscar, desde v1.7, vive dentro de un `Modal` — ver Search.jsx — pero
  * el componente en sí no sabe ni le importa dónde lo montan).
+ *
+ * `collapsibleGenres` (v2.4, default `false` — Explorar no cambia): en vez
+ * de la fila de chips + "Ver todos" de siempre, envuelve el género en un
+ * `<details>`/`<summary>` nativo, colapsado por defecto (pedido explícito
+ * del sprint de búsqueda: "mover todos los géneros a un acordeón
+ * desplegable para evitar saturar la pantalla"). `<details>` nativo en vez
+ * de un acordeón hecho a mano: teclado (Enter/Espacio) y ARIA
+ * (`aria-expanded` implícito) ya vienen correctos sin código extra.
  */
-function Filters({ value, onChange, className }) {
+function Filters({ value, onChange, className, collapsibleGenres = false }) {
   const [showAllGenres, setShowAllGenres] = useState(
     () => Boolean(value.genre) && !MAIN_GENRE_IDS.includes(Number(value.genre)),
   )
@@ -32,28 +40,49 @@ function Filters({ value, onChange, className }) {
   const visibleGenres = showAllGenres ? GENRES : GENRES.filter((genre) => MAIN_GENRE_IDS.includes(genre.id))
   const genreChips = [{ value: '', label: 'Todos' }, ...visibleGenres.map((g) => ({ value: String(g.id), label: g.label }))]
 
+  const activeGenreLabel = value.genre
+    ? GENRES.find((genre) => String(genre.id) === String(value.genre))?.label
+    : null
+
+  const genreControl = (
+    <div className="flex flex-wrap items-center gap-2">
+      <ChipGroup
+        ariaLabel="Filtrar por género"
+        layoutId="chip-genre"
+        options={genreChips}
+        value={value.genre || ''}
+        onChange={update('genre')}
+      />
+      {!showAllGenres && (
+        <button
+          type="button"
+          onClick={() => setShowAllGenres(true)}
+          className="flex min-h-11 items-center gap-1 rounded-full px-2 text-sm text-text-secondary transition-colors hover:text-text"
+        >
+          Ver todos
+          <ChevronDown size={14} aria-hidden />
+        </button>
+      )}
+    </div>
+  )
+
   return (
     <div className={className}>
       <div className="space-y-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <ChipGroup
-            ariaLabel="Filtrar por género"
-            layoutId="chip-genre"
-            options={genreChips}
-            value={value.genre || ''}
-            onChange={update('genre')}
-          />
-          {!showAllGenres && (
-            <button
-              type="button"
-              onClick={() => setShowAllGenres(true)}
-              className="flex min-h-11 items-center gap-1 rounded-full px-2 text-sm text-text-secondary transition-colors hover:text-text"
-            >
-              Ver todos
-              <ChevronDown size={14} aria-hidden />
-            </button>
-          )}
-        </div>
+        {collapsibleGenres ? (
+          <details className="group rounded-xl border border-border">
+            <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-sm text-text marker:content-none">
+              <span>
+                Género
+                {activeGenreLabel && <span className="ml-2 text-text-secondary">· {activeGenreLabel}</span>}
+              </span>
+              <ChevronDown size={16} className="shrink-0 text-text-secondary transition-transform group-open:rotate-180" aria-hidden />
+            </summary>
+            <div className="border-t border-border p-3">{genreControl}</div>
+          </details>
+        ) : (
+          genreControl
+        )}
         <div className="flex flex-wrap gap-2">
           <ChipGroup
             ariaLabel="Filtrar por formato"

@@ -24,6 +24,16 @@
   --color-text: #ffffff;
   --color-text-secondary: #c5d0e6;
 
+  /* v2.8 — texto sobre `--color-primary` (botón primario, el elemento más
+     repetido de la app). Auditoría de contraste (fórmula de luminancia
+     relativa WCAG) encontró que texto blanco sobre `--color-primary` NO
+     cumple AA (4.5:1) en NINGÚN tema — falla severo en 5 de 7 (hasta
+     1.54:1 en Cyber Neon). Reutilizar el propio `--color-background` de
+     cada tema como texto pasa AA con margen amplio (5.68–13.22:1) sin
+     inventar un color nuevo ni tocar los hues de marca ya confirmados —
+     cada bloque de tema abajo redefine este token junto a `--color-primary`. */
+  --color-on-primary: #07111f;
+
   /* Feedback — semantic only, never decorative/brand use */
   --color-error: #f87171;
 
@@ -152,6 +162,7 @@ body {
   --color-primary: #9d6fff;
   --color-primary-hover: #b48cff;
   --color-secondary: #c77dff;
+  --color-on-primary: #0f0a1f;
 }
 
 :root[data-theme="ocean-blue"] {
@@ -162,6 +173,7 @@ body {
   --color-primary: #22b8cf;
   --color-primary-hover: #4dd0e1;
   --color-secondary: #2e86ab;
+  --color-on-primary: #061620;
 }
 
 :root[data-theme="sakura-pink"] {
@@ -172,6 +184,7 @@ body {
   --color-primary: #ff7ac6;
   --color-primary-hover: #ff9ad5;
   --color-secondary: #ffb6e1;
+  --color-on-primary: #170b14;
 }
 
 :root[data-theme="emerald"] {
@@ -182,6 +195,7 @@ body {
   --color-primary: #22c58d;
   --color-primary-hover: #34d399;
   --color-secondary: #10b981;
+  --color-on-primary: #041712;
 }
 
 :root[data-theme="sunset-orange"] {
@@ -192,6 +206,7 @@ body {
   --color-primary: #ff8a4c;
   --color-primary-hover: #ffa36b;
   --color-secondary: #ffb84c;
+  --color-on-primary: #1a0f07;
 }
 
 :root[data-theme="cyber-neon"] {
@@ -203,6 +218,7 @@ body {
   --color-primary: #00e5ff;
   --color-primary-hover: #4dfbff;
   --color-secondary: #ff2fd1;
+  --color-on-primary: #05050a;
 }
 
 @media (prefers-reduced-motion: reduce) {

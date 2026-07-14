@@ -147,7 +147,7 @@ function Navbar() {
                     <Link
                       to={ROUTES.REGISTER}
                       onClick={() => setIsMenuOpen(false)}
-                      className="rounded-full bg-primary px-4 py-2.5 text-center text-sm font-semibold text-white hover:bg-primary-hover"
+                      className="rounded-full bg-primary px-4 py-2.5 text-center text-sm font-semibold text-on-primary hover:bg-primary-hover"
                     >
                       Crear cuenta
                     </Link>

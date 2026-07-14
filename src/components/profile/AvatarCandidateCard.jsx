@@ -74,7 +74,7 @@ function AvatarCandidateCard({ character, onSelect, selecting, onToggleFavorite,
             onClick={() => onSelect(character)}
             disabled={selecting}
             className={cn(
-              'mt-auto flex min-h-11 items-center justify-center gap-1.5 rounded-full bg-primary px-3 text-xs font-semibold text-white transition-colors hover:bg-primary-hover disabled:opacity-60',
+              'mt-auto flex min-h-11 items-center justify-center gap-1.5 rounded-full bg-primary px-3 text-xs font-semibold text-on-primary transition-colors hover:bg-primary-hover disabled:opacity-60',
             )}
           >
             {selecting && <Loader2 size={14} className="animate-spin" />}

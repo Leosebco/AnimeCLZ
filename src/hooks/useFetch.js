@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { getCached, setCached, removeCached } from '@/utils/cache'
+import { isAbortError } from '@/utils/apiCascade'
 
 /**
  * Generic async data hook shared by every page in AnimeCLZ.
@@ -42,7 +43,8 @@ export default function useFetch(fetcher, deps = [], options = {}) {
           if (cacheKey) setCached(cacheKey, result, cacheTTL)
         })
         .catch((err) => {
-          if (err.name === 'CanceledError' || err.code === 'ERR_CANCELED') return
+          // Bug real: el chequeo inline anterior no reconocía AbortError (solo CanceledError/ERR_CANCELED), así que un fetch largo cancelado a mitad de camino (id cambia antes de que termine) podía mostrarse como ErrorState en vez de descartarse.
+          if (isAbortError(err)) return
           setError(err)
           setLoading(false)
         })

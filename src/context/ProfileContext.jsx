@@ -206,9 +206,15 @@ export function ProfileProvider({ children }) {
     [accountId, profiles],
   )
 
+  // v3.1 — Sync Engine: fusiona en vez de reemplazar entero. Con conexión,
+  // `updated` ya es la fila completa (fusionar no cambia nada). Sin
+  // conexión, `updateProfileRequest` encola la operación y resuelve solo
+  // `{ id, ...fields }` (ver `profilesAccountService.updateProfile`) — sin
+  // esta fusión, reemplazar el perfil entero con ese objeto parcial
+  // perdería rol/avatar/activo/etc. mientras la edición sigue encolada.
   const updateProfileById = useCallback(async (id, input) => {
     const updated = await updateProfileRequest(id, input)
-    setProfiles((prev) => prev.map((profile) => (profile.id === id ? updated : profile)))
+    setProfiles((prev) => prev.map((profile) => (profile.id === id ? { ...profile, ...updated } : profile)))
     return updated
   }, [])
 

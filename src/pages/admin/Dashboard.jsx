@@ -1,6 +1,6 @@
 import { Users, ShieldCheck, MessageSquare, Star } from 'lucide-react'
 import AdminPageHeader from '@/components/admin/AdminPageHeader'
-import StatCard from '@/components/admin/StatCard'
+import StatCard from '@/components/ui/StatCard'
 import DataTable from '@/components/admin/DataTable'
 import useFetch from '@/hooks/useFetch'
 import { getDashboardStats, listRecentUsers } from '@/services/adminService'
